@@ -1,8 +1,16 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import type { GameSession, GamePlayer, LocalPlayerSession, SessionStatus } from '../types/game';
+import type {
+  GameSession,
+  GamePlayer,
+  GameVote,
+  LocalPlayerSession,
+  SessionStatus,
+  VoteRevealPrompt,
+} from '../types/game';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateRoomCode, sanitizeRoomCode } from '../lib/roomCode';
 import { validateWordSubmission, getLastLetter } from '../data';
+import { SEED_PROMPTS } from '../data/prompts';
 import { soundManager } from '../lib/audio';
 
 const STORAGE_SESSION_KEY = 'word_chain_player_session_v1';
@@ -10,6 +18,7 @@ const STORAGE_SESSION_KEY = 'word_chain_player_session_v1';
 interface GameContextType {
   session: GameSession | null;
   players: GamePlayer[];
+  votes: GameVote[];
   localPlayer: LocalPlayerSession | null;
   loading: boolean;
   error: string | null;
@@ -19,10 +28,19 @@ interface GameContextType {
   currentTurnPlayer: GamePlayer | null;
   activePlayers: GamePlayer[];
   winnerPlayer: GamePlayer | null;
-  createGame: (displayName: string, category: string) => Promise<{ success: boolean; roomCode?: string; error?: string }>;
+  localVote: string | null;
+  createGame: (
+    displayName: string,
+    category?: string,
+    gameType?: string
+  ) => Promise<{ success: boolean; roomCode?: string; error?: string }>;
   joinGame: (roomCode: string, displayName: string) => Promise<{ success: boolean; error?: string }>;
+  setGameSettings: (gameType: string, category: string) => Promise<{ success: boolean; error?: string }>;
   startGame: () => Promise<{ success: boolean; error?: string }>;
   submitWord: (word: string) => Promise<{ success: boolean; error?: string }>;
+  submitVote: (choice: string) => Promise<{ success: boolean; error?: string }>;
+  nextVoteRound: () => Promise<{ success: boolean; error?: string }>;
+  revealVotes: () => Promise<{ success: boolean; error?: string }>;
   handleTimeout: () => Promise<void>;
   resetGame: () => Promise<{ success: boolean; error?: string }>;
   leaveGame: () => void;
@@ -34,6 +52,7 @@ const GameContext = createContext<GameContextType | undefined>(undefined);
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<GameSession | null>(null);
   const [players, setPlayers] = useState<GamePlayer[]>([]);
+  const [votes, setVotes] = useState<GameVote[]>([]);
   const [localPlayer, setLocalPlayer] = useState<LocalPlayerSession | null>(() => {
     if (typeof window === 'undefined') return null;
     const saved = localStorage.getItem(STORAGE_SESSION_KEY);
@@ -48,11 +67,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState<number>(15);
+  const [timeRemaining, setTimeRemaining] = useState<number>(30);
 
   const prevTurnIndexRef = useRef<number | null>(null);
   const prevStatusRef = useRef<SessionStatus | null>(null);
+  const prevVotingPhaseRef = useRef<string | null>(null);
   const timeoutTriggeredRef = useRef<string | null>(null);
+  const realtimeChannelStateRef = useRef<{
+    sessionId: string;
+    channel: ReturnType<ReturnType<typeof getSupabase>['channel']>;
+    refCount: number;
+  } | null>(null);
 
   // Save localPlayer to localStorage
   const updateLocalPlayer = useCallback((val: LocalPlayerSession | null) => {
@@ -68,11 +93,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchSessionState = useCallback(async (sessionId: string) => {
     const supabase = getSupabase();
     try {
-      const [{ data: sessionData, error: sessionErr }, { data: playersData, error: playersErr }] =
-        await Promise.all([
-          supabase.from('game_sessions').select('*').eq('id', sessionId).single(),
-          supabase.from('game_players').select('*').eq('session_id', sessionId).order('joined_at', { ascending: true }),
-        ]);
+      const [
+        { data: sessionData, error: sessionErr },
+        { data: playersData, error: playersErr },
+        { data: votesData, error: votesErr },
+      ] = await Promise.all([
+        supabase.from('game_sessions').select('*').eq('id', sessionId).single(),
+        supabase.from('game_players').select('*').eq('session_id', sessionId).order('joined_at', { ascending: true }),
+        supabase.from('game_votes').select('*').eq('session_id', sessionId),
+      ]);
 
       if (sessionErr || !sessionData) {
         console.warn('Session not found or error:', sessionErr);
@@ -82,6 +111,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(sessionData as GameSession);
       if (playersData && !playersErr) {
         setPlayers(playersData as GamePlayer[]);
+      }
+      if (votesData && !votesErr) {
+        setVotes(votesData as GameVote[]);
       }
       return true;
     } catch (err: unknown) {
@@ -116,59 +148,113 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!session?.id || !isSupabaseConfigured()) return;
 
     const supabase = getSupabase();
-    const channelName = `session_realtime_${session.id}_${Date.now()}`;
+    const sessionId = session.id;
 
-    const channel = supabase.channel(channelName);
+    // React StrictMode runs this effect's cleanup and then re-runs the effect
+    // again synchronously in dev. If that were allowed to create a second
+    // channel with the exact same postgres_changes filters while the first
+    // one is still registered, Supabase Realtime's server-side subscription
+    // for that filter ends up shared between the two channels - and removing
+    // either one (which the first channel's cleanup does) tears down that
+    // shared registration entirely, leaving the survivor "SUBSCRIBED" but
+    // silently never receiving any events again. That's the root cause of
+    // votes/session updates not appearing live between two tabs.
+    //
+    // A ref persists across StrictMode's synchronous mount/cleanup/mount, so
+    // we use it to reuse the same channel instead of creating a new one, with
+    // a ref count to know when the channel is genuinely no longer needed. The
+    // cleanup's decrement is deferred to a microtask so a same-tick remount
+    // (StrictMode) increments the count again before we'd otherwise remove it.
+    const existing = realtimeChannelStateRef.current;
 
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'game_sessions',
-          filter: `id=eq.${session.id}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-            const updated = payload.new as GameSession;
-            setSession(updated);
-          } else if (payload.eventType === 'DELETE') {
-            setSession(null);
-            setError('The game session has been closed.');
+    if (existing && existing.sessionId === sessionId) {
+      existing.refCount += 1;
+    } else {
+      if (existing) {
+        supabase.removeChannel(existing.channel);
+      }
+
+      const channel = supabase.channel(`session_realtime_${sessionId}_${Date.now()}`);
+
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'game_sessions',
+            filter: `id=eq.${sessionId}`,
+          },
+          (payload) => {
+            if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+              const updated = payload.new as GameSession;
+              setSession(updated);
+            } else if (payload.eventType === 'DELETE') {
+              setSession(null);
+              setError('The game session has been closed.');
+            }
           }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'game_players',
-          filter: `session_id=eq.${session.id}`,
-        },
-        async () => {
-          const { data } = await supabase
-            .from('game_players')
-            .select('*')
-            .eq('session_id', session.id)
-            .order('joined_at', { ascending: true });
-          if (data) {
-            setPlayers(data as GamePlayer[]);
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'game_players',
+            filter: `session_id=eq.${sessionId}`,
+          },
+          async () => {
+            const { data } = await supabase
+              .from('game_players')
+              .select('*')
+              .eq('session_id', sessionId)
+              .order('joined_at', { ascending: true });
+            if (data) {
+              setPlayers(data as GamePlayer[]);
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'game_votes',
+            filter: `session_id=eq.${sessionId}`,
+          },
+          async () => {
+            const { data } = await supabase
+              .from('game_votes')
+              .select('*')
+              .eq('session_id', sessionId);
+            if (data) {
+              setVotes(data as GameVote[]);
+            }
+          }
+        )
+        .subscribe();
+
+      realtimeChannelStateRef.current = { sessionId, channel, refCount: 1 };
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      queueMicrotask(() => {
+        const state = realtimeChannelStateRef.current;
+        if (state && state.sessionId === sessionId) {
+          state.refCount -= 1;
+          if (state.refCount <= 0) {
+            supabase.removeChannel(state.channel);
+            realtimeChannelStateRef.current = null;
+          }
+        }
+      });
     };
   }, [session?.id]);
 
   // Active players
   const activePlayers = players.filter((p) => !p.is_eliminated);
 
-  // Current turn player ID
+  // Current turn player ID (for word_chain)
   const turnOrder = Array.isArray(session?.turn_order) ? session.turn_order : [];
   const currentTurnPlayerId =
     turnOrder.length > 0 && session
@@ -176,9 +262,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       : null;
 
   const currentTurnPlayer = players.find((p) => p.id === currentTurnPlayerId) || null;
-  const isMyTurn = Boolean(localPlayer?.playerId && currentTurnPlayerId === localPlayer.playerId && session?.status === 'playing');
+  const isMyTurn = Boolean(
+    localPlayer?.playerId &&
+      currentTurnPlayerId === localPlayer.playerId &&
+      session?.status === 'playing' &&
+      session?.game_type !== 'vote_reveal'
+  );
 
-  // Winner calculation
+  // Winner calculation for word chain
   let winnerPlayer: GamePlayer | null = null;
   if (session?.status === 'finished') {
     if (activePlayers.length === 1) {
@@ -188,7 +279,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  // Sound effects & Turn change detector
+  // Local player's vote in current round
+  const currentRoundNumber = session?.game_config?.round_number || 1;
+  const localVote =
+    votes.find(
+      (v) => v.player_id === localPlayer?.playerId && v.round_number === currentRoundNumber
+    )?.choice || null;
+
+  // Sound effects & state change detector
   useEffect(() => {
     if (!session) return;
 
@@ -198,52 +296,143 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       soundManager.playWinner();
     }
 
-    if (session.status === 'playing' && session.current_turn_index !== prevTurnIndexRef.current) {
-      if (isMyTurn) {
-        soundManager.playTurnStart();
+    if (session.game_type === 'word_chain') {
+      if (session.status === 'playing' && session.current_turn_index !== prevTurnIndexRef.current) {
+        if (isMyTurn) {
+          soundManager.playTurnStart();
+        }
+        timeoutTriggeredRef.current = null;
       }
-      timeoutTriggeredRef.current = null;
+    } else if (session.game_type === 'vote_reveal') {
+      const currentPhase = session.game_config?.voting_phase;
+      if (currentPhase === 'revealed' && prevVotingPhaseRef.current === 'voting') {
+        soundManager.playReveal();
+      }
+      prevVotingPhaseRef.current = currentPhase || null;
     }
 
     prevStatusRef.current = session.status;
     prevTurnIndexRef.current = session.current_turn_index;
   }, [session, isMyTurn]);
 
-  // Turn Countdown Timer & automatic elimination trigger
+  // Turn / Round Countdown Timer & automatic timeout trigger
   useEffect(() => {
+    const isVoteReveal = session?.game_type === 'vote_reveal';
+    const defaultTimer = isVoteReveal ? 20 : 30;
+
     if (session?.status !== 'playing' || !session.turn_deadline) {
-      setTimeRemaining(15);
+      setTimeRemaining(defaultTimer);
       return;
     }
 
-    const interval = setInterval(() => {
-      const deadline = new Date(session.turn_deadline!).getTime();
-      const now = Date.now();
-      const diffSec = Math.max(0, Math.ceil((deadline - now) / 1000));
+    const deadlineMs = new Date(session.turn_deadline).getTime();
+    const anchorStart = Date.now();
+    // The client and Postgres server clocks are not guaranteed to be in sync
+    // (observed drift of multiple hours in some environments). A raw
+    // `deadlineMs - Date.now()` diff is only meaningful when both clocks
+    // roughly agree; when they don't, it can show wildly wrong values like
+    // "10760s" instead of counting down from the intended 20/30s. Detect that
+    // and fall back to a countdown anchored on our own clock instead.
+    const initialServerDiffSec = (deadlineMs - anchorStart) / 1000;
+    const clockSkewed = initialServerDiffSec < -5 || initialServerDiffSec > defaultTimer + 5;
+
+    const tick = () => {
+      const diffSec = clockSkewed
+        ? Math.max(0, Math.ceil(defaultTimer - (Date.now() - anchorStart) / 1000))
+        : Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1000));
 
       setTimeRemaining(diffSec);
 
       if (diffSec <= 3 && diffSec > 0) {
         soundManager.playTick(true);
-      } else if (diffSec <= 5 && diffSec > 3) {
+      } else if (diffSec <= 6 && diffSec > 3) {
         soundManager.playTick(false);
       }
 
       // Check timeout
-      if (diffSec === 0 && currentTurnPlayerId) {
-        const timeoutKey = `${session.id}_${currentTurnPlayerId}_${session.current_turn_index}`;
-        if (timeoutTriggeredRef.current !== timeoutKey) {
-          timeoutTriggeredRef.current = timeoutKey;
-          handleTimeout();
+      if (diffSec === 0) {
+        if (isVoteReveal) {
+          const timeoutKey = `vote_${session.id}_round_${session.game_config?.round_number || 1}`;
+          if (
+            timeoutTriggeredRef.current !== timeoutKey &&
+            session.game_config?.voting_phase === 'voting'
+          ) {
+            timeoutTriggeredRef.current = timeoutKey;
+            handleTimeout();
+          }
+        } else if (currentTurnPlayerId) {
+          const timeoutKey = `${session.id}_${currentTurnPlayerId}_${session.current_turn_index}`;
+          if (timeoutTriggeredRef.current !== timeoutKey) {
+            timeoutTriggeredRef.current = timeoutKey;
+            handleTimeout();
+          }
         }
       }
-    }, 500);
+    };
+
+    tick();
+    const interval = setInterval(tick, 500);
 
     return () => clearInterval(interval);
-  }, [session?.status, session?.turn_deadline, session?.current_turn_index, currentTurnPlayerId, session?.id]);
+  }, [
+    session?.status,
+    session?.turn_deadline,
+    session?.current_turn_index,
+    session?.game_type,
+    session?.game_config?.round_number,
+    session?.game_config?.voting_phase,
+    currentTurnPlayerId,
+    session?.id,
+  ]);
+
+  // Helper to pick random prompt from DB or fallback
+  const pickRandomPrompt = async (
+    category: string,
+    usedIds: string[] = []
+  ): Promise<VoteRevealPrompt> => {
+    const supabase = getSupabase();
+    try {
+      const { data: prompts } = await supabase
+        .from('game_prompts')
+        .select('*')
+        .eq('engine', 'vote_reveal')
+        .eq('category', category);
+
+      if (prompts && prompts.length > 0) {
+        const unused = prompts.filter((p) => !usedIds.includes(p.id));
+        const pool = unused.length > 0 ? unused : prompts;
+        const selected = pool[Math.floor(Math.random() * pool.length)];
+        return {
+          id: selected.id,
+          prompt_text: selected.prompt_text,
+          options: selected.options as [string, string],
+          category: selected.category,
+        };
+      }
+    } catch (e) {
+      console.warn('Could not query game_prompts from DB, using fallback prompts:', e);
+    }
+
+    // Local fallback from SEED_PROMPTS
+    const catPrompts = SEED_PROMPTS.filter((p) => p.category === category);
+    const pool = catPrompts.length > 0 ? catPrompts : SEED_PROMPTS;
+    const unused = pool.filter((p) => !usedIds.includes(p.id));
+    const finalPool = unused.length > 0 ? unused : pool;
+    const selected = finalPool[Math.floor(Math.random() * finalPool.length)];
+    return {
+      id: selected.id,
+      prompt_text: selected.prompt_text,
+      options: selected.options,
+      category: selected.category,
+    };
+  };
 
   // Action: Create Game
-  const createGame = async (displayName: string, category: string = 'cities') => {
+  const createGame = async (
+    displayName: string,
+    category: string = 'cities',
+    gameType: string = 'word_chain'
+  ) => {
     setError(null);
     setLoading(true);
     const supabase = getSupabase();
@@ -256,13 +445,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .insert({
           room_code: roomCode,
           category,
-          game_type: 'word_chain',
+          game_type: gameType,
           status: 'lobby',
           turn_order: [],
           current_turn_index: 0,
           used_words: [],
           last_letter: null,
           turn_deadline: null,
+          game_config: {},
         })
         .select()
         .single();
@@ -296,6 +486,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateLocalPlayer(local);
       setSession(sessionData as GameSession);
       setPlayers([playerData as GamePlayer]);
+      setVotes([]);
 
       return { success: true, roomCode: sessionData.room_code };
     } catch (err: unknown) {
@@ -373,6 +564,34 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Action: Update Game Settings (Type & Category) in Lobby
+  const setGameSettings = async (gameType: string, category: string) => {
+    if (!session || !localPlayer?.isHost) return { success: false, error: 'Host only' };
+    setError(null);
+    const supabase = getSupabase();
+
+    try {
+      const { data: updated, error: updateErr } = await supabase
+        .from('game_sessions')
+        .update({
+          game_type: gameType,
+          category,
+        })
+        .eq('id', session.id)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+
+      setSession(updated as GameSession);
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to update game settings';
+      setError(message);
+      return { success: false, error: message };
+    }
+  };
+
   // Action: Start Game
   const startGame = async () => {
     if (!session || !localPlayer) return { success: false, error: 'No active session' };
@@ -400,28 +619,60 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const shuffledIds = activeJoined.map((p) => p.id).sort(() => Math.random() - 0.5);
-      const deadline = new Date(Date.now() + 15000).toISOString();
 
       await supabase.from('game_players').update({ is_eliminated: false }).eq('session_id', session.id);
 
-      const { data: updatedSession, error: updateErr } = await supabase
-        .from('game_sessions')
-        .update({
-          status: 'playing',
-          turn_order: shuffledIds,
-          current_turn_index: 0,
-          used_words: [],
-          last_letter: null,
-          turn_deadline: deadline,
-        })
-        .eq('id', session.id)
-        .select()
-        .single();
+      if (session.game_type === 'vote_reveal') {
+        const prompt = await pickRandomPrompt(session.category || 'general');
+        const deadline = new Date(Date.now() + 20000).toISOString();
+        const config = {
+          round_number: 1,
+          voting_phase: 'voting',
+          current_prompt: prompt,
+          used_prompt_ids: [prompt.id],
+        };
 
-      if (updateErr) throw updateErr;
+        const { data: updatedSession, error: updateErr } = await supabase
+          .from('game_sessions')
+          .update({
+            status: 'playing',
+            turn_order: shuffledIds,
+            current_turn_index: 0,
+            turn_deadline: deadline,
+            game_config: config,
+          })
+          .eq('id', session.id)
+          .select()
+          .single();
 
-      setSession(updatedSession as GameSession);
-      return { success: true };
+        if (updateErr) throw updateErr;
+
+        setSession(updatedSession as GameSession);
+        return { success: true };
+      } else {
+        // Word Chain fallback (30s timer)
+        const deadline = new Date(Date.now() + 30000).toISOString();
+
+        const { data: updatedSession, error: updateErr } = await supabase
+          .from('game_sessions')
+          .update({
+            status: 'playing',
+            turn_order: shuffledIds,
+            current_turn_index: 0,
+            used_words: [],
+            last_letter: null,
+            turn_deadline: deadline,
+            game_config: {},
+          })
+          .eq('id', session.id)
+          .select()
+          .single();
+
+        if (updateErr) throw updateErr;
+
+        setSession(updatedSession as GameSession);
+        return { success: true };
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to start game';
       setError(message);
@@ -429,7 +680,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Action: Submit Word
+  // Action: Submit Word (Word Chain)
   const submitWord = async (inputWord: string) => {
     if (!session || !localPlayer) {
       return { success: false, error: 'Session not active' };
@@ -469,7 +720,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true };
       }
 
-      // Direct fallback mutation
+      // Direct fallback mutation (30s deadline)
       const newWordEntry = {
         word: formattedWord.toLowerCase(),
         display_word: formattedWord,
@@ -495,7 +746,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const activeCount = players.filter((p) => !p.is_eliminated).length;
       const isFinished = activeCount <= 1 && totalInOrder > 1;
 
-      const deadline = new Date(Date.now() + 15000).toISOString();
+      const deadline = new Date(Date.now() + 30000).toISOString();
 
       const { data: updatedSession, error: updateErr } = await supabase
         .from('game_sessions')
@@ -523,12 +774,160 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Action: Handle Timeout
-  const handleTimeout = async () => {
-    if (!session || session.status !== 'playing' || !currentTurnPlayerId) return;
+  // Action: Submit Vote (Vote & Reveal)
+  const submitVote = async (choice: string) => {
+    if (!session || !localPlayer) return { success: false, error: 'No active session' };
+    const roundNumber = session.game_config?.round_number || 1;
     const supabase = getSupabase();
 
     try {
+      soundManager.playVote();
+
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('submit_vote', {
+        p_session_id: session.id,
+        p_player_id: localPlayer.playerId,
+        p_round_number: roundNumber,
+        p_choice: choice,
+      });
+
+      if (!rpcErr && rpcData) {
+        await fetchSessionState(session.id);
+        return { success: true };
+      }
+
+      // Fallback direct upsert
+      const { error: upsertErr } = await supabase.from('game_votes').upsert(
+        {
+          session_id: session.id,
+          player_id: localPlayer.playerId,
+          round_number: roundNumber,
+          choice,
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: 'session_id,player_id,round_number' }
+      );
+
+      if (upsertErr) throw upsertErr;
+
+      // Check if all players voted
+      const { data: roundVotes } = await supabase
+        .from('game_votes')
+        .select('*')
+        .eq('session_id', session.id)
+        .eq('round_number', roundNumber);
+
+      const activePlayersCount = players.filter((p) => !p.is_eliminated).length;
+
+      if (roundVotes && roundVotes.length >= activePlayersCount && activePlayersCount > 0) {
+        const updatedConfig = {
+          ...(session.game_config || {}),
+          voting_phase: 'revealed',
+        };
+        await supabase
+          .from('game_sessions')
+          .update({ game_config: updatedConfig })
+          .eq('id', session.id);
+      }
+
+      await fetchSessionState(session.id);
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to submit vote';
+      setError(message);
+      return { success: false, error: message };
+    }
+  };
+
+  // Action: Next Vote Round (Vote & Reveal)
+  const nextVoteRound = async () => {
+    if (!session || !localPlayer?.isHost) return { success: false, error: 'Host only' };
+    setError(null);
+    const supabase = getSupabase();
+
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('next_vote_round', {
+        p_session_id: session.id,
+      });
+
+      if (!rpcErr && rpcData) {
+        await fetchSessionState(session.id);
+        return { success: true };
+      }
+
+      // Fallback direct mutation
+      const nextRound = (session.game_config?.round_number || 1) + 1;
+      const usedIds = (session.game_config?.used_prompt_ids as string[]) || [];
+      const nextPrompt = await pickRandomPrompt(session.category || 'general', usedIds);
+      const deadline = new Date(Date.now() + 20000).toISOString();
+
+      const newConfig = {
+        round_number: nextRound,
+        voting_phase: 'voting',
+        current_prompt: nextPrompt,
+        used_prompt_ids: [...usedIds, nextPrompt.id],
+      };
+
+      const { data: updated, error: updateErr } = await supabase
+        .from('game_sessions')
+        .update({
+          turn_deadline: deadline,
+          game_config: newConfig,
+        })
+        .eq('id', session.id)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+
+      setSession(updated as GameSession);
+      await fetchSessionState(session.id);
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to advance round';
+      setError(message);
+      return { success: false, error: message };
+    }
+  };
+
+  // Action: Reveal Votes (Manual or Timeout Trigger)
+  const revealVotes = async () => {
+    if (!session) return { success: false, error: 'No active session' };
+    const supabase = getSupabase();
+
+    try {
+      const updatedConfig = {
+        ...(session.game_config || {}),
+        voting_phase: 'revealed',
+      };
+
+      await supabase
+        .from('game_sessions')
+        .update({ game_config: updatedConfig })
+        .eq('id', session.id);
+
+      await fetchSessionState(session.id);
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to reveal votes';
+      return { success: false, error: message };
+    }
+  };
+
+  // Action: Handle Timeout
+  const handleTimeout = async () => {
+    if (!session || session.status !== 'playing') return;
+    const supabase = getSupabase();
+
+    try {
+      if (session.game_type === 'vote_reveal') {
+        // Vote & Reveal timeout: reveal the results
+        await revealVotes();
+        return;
+      }
+
+      // Word Chain timeout handling
+      if (!currentTurnPlayerId) return;
+
       const { data: rpcData, error: rpcErr } = await supabase.rpc('handle_timeout', {
         p_session_id: session.id,
         p_timed_out_player_id: currentTurnPlayerId,
@@ -542,7 +941,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // Fallback direct mutation
+      // Fallback direct mutation (30s)
       soundManager.playEliminated();
 
       await supabase
@@ -581,7 +980,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        const deadline = new Date(Date.now() + 15000).toISOString();
+        const deadline = new Date(Date.now() + 30000).toISOString();
         await supabase
           .from('game_sessions')
           .update({
@@ -597,7 +996,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Action: Reset Game
+  // Action: Reset Game (For "Play Again" or returning to lobby)
   const resetGame = async () => {
     if (!session) return { success: false, error: 'No active session' };
     const supabase = getSupabase();
@@ -627,6 +1026,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           used_words: [],
           last_letter: null,
           turn_deadline: null,
+          game_config: {},
         })
         .eq('id', session.id)
         .select()
@@ -648,6 +1048,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     updateLocalPlayer(null);
     setSession(null);
     setPlayers([]);
+    setVotes([]);
     setError(null);
   };
 
@@ -662,6 +1063,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         session,
         players,
+        votes,
         localPlayer,
         loading,
         error,
@@ -671,10 +1073,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentTurnPlayer,
         activePlayers,
         winnerPlayer,
+        localVote,
         createGame,
         joinGame,
+        setGameSettings,
         startGame,
         submitWord,
+        submitVote,
+        nextVoteRound,
+        revealVotes,
         handleTimeout,
         resetGame,
         leaveGame,

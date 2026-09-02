@@ -1,11 +1,28 @@
 export type SessionStatus = 'lobby' | 'playing' | 'finished';
 
+export type GameType = 'word_chain' | 'vote_reveal';
+
 export interface UsedWordItem {
   word: string;
   display_word?: string;
   player_id?: string;
   player_name?: string;
   submitted_at?: string;
+}
+
+export interface VoteRevealPrompt {
+  id: string;
+  prompt_text: string;
+  options: [string, string] | string[];
+  category?: string;
+}
+
+export interface GameConfig {
+  round_number?: number;
+  current_prompt?: VoteRevealPrompt | null;
+  used_prompt_ids?: string[];
+  voting_phase?: 'voting' | 'revealed';
+  [key: string]: unknown;
 }
 
 export interface GameSession {
@@ -19,6 +36,7 @@ export interface GameSession {
   used_words: (string | UsedWordItem)[];
   last_letter: string | null;
   turn_deadline: string | null; // ISO timestamp
+  game_config?: GameConfig;
   created_at: string;
 }
 
@@ -28,6 +46,24 @@ export interface GamePlayer {
   display_name: string;
   is_eliminated: boolean;
   joined_at: string;
+}
+
+export interface GamePrompt {
+  id: string;
+  engine: string;
+  category: string;
+  prompt_text: string;
+  options: [string, string] | string[] | null;
+  created_at?: string;
+}
+
+export interface GameVote {
+  id: string;
+  session_id: string;
+  player_id: string;
+  round_number: number;
+  choice: string;
+  created_at: string;
 }
 
 export interface LocalPlayerSession {

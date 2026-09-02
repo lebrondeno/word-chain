@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { CATEGORIES } from '../data';
+import { VOTE_REVEAL_CATEGORIES, GAME_TYPES } from '../data/prompts';
 import { sanitizeRoomCode } from '../lib/roomCode';
 import { Play, UserPlus, Sparkles, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 
@@ -21,6 +22,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
     return typeof window !== 'undefined' ? localStorage.getItem('word_chain_saved_name') || '' : '';
   });
   const [roomCode, setRoomCode] = useState(initialRoomCode || '');
+  const [gameType, setGameType] = useState<string>('word_chain');
   const [category, setCategory] = useState<string>('cities');
 
   useEffect(() => {
@@ -37,13 +39,22 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
     }
   };
 
+  const handleGameTypeSelect = (typeId: string) => {
+    setGameType(typeId);
+    if (typeId === 'vote_reveal') {
+      setCategory('general');
+    } else {
+      setCategory('cities');
+    }
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!displayName.trim()) {
       setError('Please enter a display name');
       return;
     }
-    await createGame(displayName.trim(), category);
+    await createGame(displayName.trim(), category, gameType);
   };
 
   const handleJoin = async (e: React.FormEvent) => {
@@ -60,6 +71,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
   };
 
   const configured = isSupabaseConfigured();
+  const isVoteReveal = gameType === 'vote_reveal';
 
   return (
     <div className="w-full max-w-md mx-auto px-4 py-8 animate-fade-in">
@@ -67,16 +79,16 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold mb-3">
           <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-          Realtime Multiplayer Word Game
+          Realtime Multiplayer Game Platform
         </div>
         <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight leading-tight mb-2">
-          Pass the Letter, <br />
+          Play Together, <br />
           <span className="bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
-            Hold the Chain.
+            Realtime in Browser.
           </span>
         </h1>
         <p className="text-slate-400 text-xs sm:text-sm max-w-sm mx-auto">
-          Take turns linking words by their last letter before the 15s timer runs out.
+          Multiplayer party games: Word Chain elimination & Would You Rather group reveals.
         </p>
       </div>
 
@@ -150,7 +162,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="e.g. MasterWordsmith"
+                placeholder="e.g. PartyHost"
                 maxLength={20}
                 value={displayName}
                 onChange={(e) => saveName(e.target.value)}
@@ -159,35 +171,95 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
               />
             </div>
 
+            {/* Game Type Picker */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Category
+                Choose Game
               </label>
               <div className="grid grid-cols-2 gap-2">
-                {Object.values(CATEGORIES).map((cat) => {
-                  const isSelected = category === cat.id;
+                {Object.values(GAME_TYPES).map((type) => {
+                  const isSelected = gameType === type.id;
                   return (
                     <button
+                      key={type.id}
                       type="button"
-                      key={cat.id}
-                      onClick={() => setCategory(cat.id)}
+                      onClick={() => handleGameTypeSelect(type.id)}
                       className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
                         isSelected
-                          ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-inner'
-                          : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                          ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-inner ring-1 ring-indigo-500/40'
+                          : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <span className="text-xl">{cat.icon}</span>
+                      <span className="text-xl">{type.icon}</span>
                       <div className="overflow-hidden">
-                        <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                        <div className="font-semibold text-xs text-white truncate">{type.name}</div>
                         <div className="text-[10px] text-slate-400 truncate">
-                          {cat.words.length}+ words
+                          {type.id === 'word_chain' ? '30s turn timer' : '20s vote & reveal'}
                         </div>
                       </div>
                     </button>
                   );
                 })}
               </div>
+            </div>
+
+            {/* Category Picker */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                {isVoteReveal ? 'Theme' : 'Word Category'}
+              </label>
+
+              {isVoteReveal ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.values(VOTE_REVEAL_CATEGORIES).map((cat) => {
+                    const isSelected = category === cat.id;
+                    return (
+                      <button
+                        type="button"
+                        key={cat.id}
+                        onClick={() => setCategory(cat.id)}
+                        className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                          isSelected
+                            ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
+                            : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <span className="text-xl">{cat.icon}</span>
+                        <div className="overflow-hidden">
+                          <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                          <div className="text-[10px] text-slate-400 truncate">{cat.description}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.values(CATEGORIES).map((cat) => {
+                    const isSelected = category === cat.id;
+                    return (
+                      <button
+                        type="button"
+                        key={cat.id}
+                        onClick={() => setCategory(cat.id)}
+                        className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                          isSelected
+                            ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-inner'
+                            : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                        }`}
+                      >
+                        <span className="text-xl">{cat.icon}</span>
+                        <div className="overflow-hidden">
+                          <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {cat.words.length}+ words
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <button
