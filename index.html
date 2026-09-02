@@ -6,7 +6,15 @@
     <title>Word Chain — Live Multiplayer Game</title>
     <meta name="description" content="Multiplayer Word Chain game in real-time. Link words by their last letter against a 15-second clock!" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⛓️</text></svg>" />
+    <!-- vite-plugin-pwa injects the manifest <link> automatically at build
+         time (see vite.config.ts); the apple-* tags below aren't covered by
+         that injection, so they're added explicitly for iOS home-screen
+         support. -->
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <meta name="theme-color" content="#020617" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="WordChain" />
   </head>
   <body class="bg-slate-950 text-slate-100 min-h-screen">
     <div id="root"></div>
