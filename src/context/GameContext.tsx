@@ -277,7 +277,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localPlayer?.playerId &&
       currentTurnPlayerId === localPlayer.playerId &&
       session?.status === 'playing' &&
-      session?.game_type !== 'vote_reveal'
+      session?.game_type !== 'vote_reveal' &&
+      session?.game_type !== 'most_likely'
   );
 
   // Winner calculation for word chain
@@ -314,7 +315,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         timeoutTriggeredRef.current = null;
       }
-    } else if (session.game_type === 'vote_reveal') {
+    } else if (session.game_type === 'vote_reveal' || session.game_type === 'most_likely') {
       const currentPhase = session.game_config?.voting_phase;
       if (currentPhase === 'revealed' && prevVotingPhaseRef.current === 'voting') {
         soundManager.playReveal();
@@ -328,7 +329,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Turn / Round Countdown Timer & automatic timeout trigger
   useEffect(() => {
-    const isVoteReveal = session?.game_type === 'vote_reveal';
+    // vote_reveal and most_likely both run simultaneous voting rounds (20s),
+    // as opposed to word_chain's per-player turn timer (30s)
+    const isVoteReveal = session?.game_type === 'vote_reveal' || session?.game_type === 'most_likely';
     const defaultTimer = isVoteReveal ? 20 : 30;
 
     if (session?.status !== 'playing' || !session.turn_deadline) {
@@ -396,17 +399,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     session?.id,
   ]);
 
+  // A null options column means "vote for a player" (most_likely): build the
+  // option list from the session's currently active players instead of fixed text
+  const resolvePromptOptions = (
+    options: VoteRevealPrompt['options']
+  ): VoteRevealPrompt['options'] => {
+    if (options) return options;
+    return players
+      .filter((p) => !p.is_eliminated)
+      .map((p) => ({ id: p.id, display_name: p.display_name }));
+  };
+
   // Helper to pick random prompt from DB or fallback
   const pickRandomPrompt = async (
     category: string,
-    usedIds: string[] = []
+    usedIds: string[] = [],
+    engine: string = 'vote_reveal'
   ): Promise<VoteRevealPrompt> => {
     const supabase = getSupabase();
     try {
       const { data: prompts } = await supabase
         .from('game_prompts')
         .select('*')
-        .eq('engine', 'vote_reveal')
+        .eq('engine', engine)
         .eq('category', category);
 
       if (prompts && prompts.length > 0) {
@@ -416,7 +431,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return {
           id: selected.id,
           prompt_text: selected.prompt_text,
-          options: selected.options as [string, string],
+          options: resolvePromptOptions(selected.options as VoteRevealPrompt['options']),
           category: selected.category,
         };
       }
@@ -425,15 +440,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Local fallback from SEED_PROMPTS
-    const catPrompts = SEED_PROMPTS.filter((p) => p.category === category);
-    const pool = catPrompts.length > 0 ? catPrompts : SEED_PROMPTS;
+    const enginePrompts = SEED_PROMPTS.filter((p) => p.engine === engine);
+    const catPrompts = enginePrompts.filter((p) => p.category === category);
+    const pool = catPrompts.length > 0 ? catPrompts : enginePrompts;
     const unused = pool.filter((p) => !usedIds.includes(p.id));
     const finalPool = unused.length > 0 ? unused : pool;
     const selected = finalPool[Math.floor(Math.random() * finalPool.length)];
     return {
       id: selected.id,
       prompt_text: selected.prompt_text,
-      options: selected.options,
+      options: resolvePromptOptions(selected.options),
       category: selected.category,
     };
   };
@@ -633,8 +649,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       await supabase.from('game_players').update({ is_eliminated: false }).eq('session_id', session.id);
 
-      if (session.game_type === 'vote_reveal') {
-        const prompt = await pickRandomPrompt(session.category || 'general');
+      if (session.game_type === 'vote_reveal' || session.game_type === 'most_likely') {
+        const prompt = await pickRandomPrompt(session.category || 'general', [], session.game_type);
         const deadline = new Date(Date.now() + 20000).toISOString();
         const config = {
           round_number: 1,
@@ -868,7 +884,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Fallback direct mutation
       const nextRound = (session.game_config?.round_number || 1) + 1;
       const usedIds = (session.game_config?.used_prompt_ids as string[]) || [];
-      const nextPrompt = await pickRandomPrompt(session.category || 'general', usedIds);
+      const nextPrompt = await pickRandomPrompt(session.category || 'general', usedIds, session.game_type);
       const deadline = new Date(Date.now() + 20000).toISOString();
 
       const newConfig = {
@@ -930,8 +946,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const supabase = getSupabase();
 
     try {
-      if (session.game_type === 'vote_reveal') {
-        // Vote & Reveal timeout: reveal the results
+      if (session.game_type === 'vote_reveal' || session.game_type === 'most_likely') {
+        // Vote & Reveal / Most Likely timeout: reveal the results
         await revealVotes();
         return;
       }

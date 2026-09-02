@@ -57,9 +57,38 @@ CREATE INDEX IF NOT EXISTS idx_game_prompts_engine_cat ON game_prompts(engine, c
 CREATE INDEX IF NOT EXISTS idx_game_votes_session_round ON game_votes(session_id, round_number);
 
 -- 3. Enable Realtime Replication
-ALTER PUBLICATION supabase_realtime ADD TABLE game_sessions;
-ALTER PUBLICATION supabase_realtime ADD TABLE game_players;
-ALTER PUBLICATION supabase_realtime ADD TABLE game_votes;
+-- ALTER PUBLICATION ... ADD TABLE errors if the table is already a member, so
+-- this schema (which is re-run on every deploy) guards each one with a check
+-- against pg_publication_tables instead of adding it unconditionally.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'game_sessions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE game_sessions;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'game_players'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE game_players;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'game_votes'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE game_votes;
+  END IF;
+END $$;
 
 -- 4. Enable Row Level Security (RLS)
 ALTER TABLE game_sessions ENABLE ROW LEVEL SECURITY;
@@ -118,7 +147,25 @@ INSERT INTO game_prompts (id, engine, category, prompt_text, options) VALUES
   ('11111111-0002-4000-8000-000000000004', 'vote_reveal', 'couples', 'Would you rather always share the exact same sleep schedule or always crave the exact same foods?', '["Same sleep schedule", "Same food cravings"]'::jsonb),
   ('11111111-0002-4000-8000-000000000005', 'vote_reveal', 'couples', 'Would you rather move into a stylish penthouse in a bustling city or a peaceful countryside farmhouse?', '["Bustling city penthouse", "Countryside farmhouse"]'::jsonb),
   ('11111111-0002-4000-8000-000000000006', 'vote_reveal', 'couples', 'Would you rather have your partner pick all your outfits for a month or pick all your meals for a month?', '["Partner picks outfits", "Partner picks meals"]'::jsonb),
-  ('11111111-0002-4000-8000-000000000007', 'vote_reveal', 'couples', 'Would you rather binge a 10-season TV show together in one weekend or watch a new movie every night for a month?', '["Binge 10-season show", "Movie every night"]'::jsonb)
+  ('11111111-0002-4000-8000-000000000007', 'vote_reveal', 'couples', 'Would you rather binge a 10-season TV show together in one weekend or watch a new movie every night for a month?', '["Binge 10-season show", "Movie every night"]'::jsonb),
+
+  ('11111111-0003-4000-8000-000000000001', 'vote_reveal', 'majority_rules', 'Which is worse: being left on read or being replied to with just "😂"?', '["Left on read", "Replied with 😂"]'::jsonb),
+  ('11111111-0003-4000-8000-000000000002', 'vote_reveal', 'majority_rules', 'Which is worse: forgetting someone''s name right after they told you, or forgetting your own PIN at checkout?', '["Forgetting a name", "Forgetting your PIN"]'::jsonb),
+  ('11111111-0003-4000-8000-000000000003', 'vote_reveal', 'majority_rules', 'Which is more annoying: slow wifi or a phone stuck on 1% battery for 10 minutes?', '["Slow wifi", "Stuck at 1% battery"]'::jsonb),
+  ('11111111-0003-4000-8000-000000000004', 'vote_reveal', 'majority_rules', 'Which is worse: loud chewing or someone tapping their pen the whole meeting?', '["Loud chewing", "Pen tapping"]'::jsonb),
+  ('11111111-0003-4000-8000-000000000005', 'vote_reveal', 'majority_rules', 'Which is a bigger red flag: replying "k" to everything or double-texting constantly?', '["Replying just \"k\"", "Double-texting"]'::jsonb),
+
+  ('11111111-0004-4000-8000-000000000001', 'vote_reveal', 'boys_debate', 'Is a PS5 worth buying if you already have a working PS4?', '["Yes", "No"]'::jsonb),
+  ('11111111-0004-4000-8000-000000000002', 'vote_reveal', 'boys_debate', 'Is watching football with your boys better than going on a date that same night?', '["Yes", "No"]'::jsonb),
+  ('11111111-0004-4000-8000-000000000003', 'vote_reveal', 'boys_debate', 'Is it acceptable to leave a friend''s house without saying goodbye to everyone?', '["Yes", "No"]'::jsonb),
+  ('11111111-0004-4000-8000-000000000004', 'vote_reveal', 'boys_debate', 'Messi or Ronaldo — is this debate actually over by now?', '["Messi", "Ronaldo"]'::jsonb),
+  ('11111111-0004-4000-8000-000000000005', 'vote_reveal', 'boys_debate', 'Is it okay to check your phone while someone is telling you a story in person?', '["Yes", "No"]'::jsonb),
+
+  ('11111111-0005-4000-8000-000000000001', 'most_likely', 'general', 'Who''s most likely to become famous one day?', null),
+  ('11111111-0005-4000-8000-000000000002', 'most_likely', 'general', 'Who''s most likely to sleep through an important meeting or event?', null),
+  ('11111111-0005-4000-8000-000000000003', 'most_likely', 'general', 'Who''s most likely to disappear from the group chat for months and reappear like nothing happened?', null),
+  ('11111111-0005-4000-8000-000000000004', 'most_likely', 'general', 'Who''s most likely to win an argument just by being stubborn, not by being right?', null),
+  ('11111111-0005-4000-8000-000000000005', 'most_likely', 'general', 'Who''s most likely to still be awake at 3am for no real reason?', null)
 ON CONFLICT (id) DO NOTHING;
 
 
@@ -140,6 +187,7 @@ DECLARE
   v_player_count int;
   v_deadline timestamptz;
   v_prompt game_prompts%ROWTYPE;
+  v_options jsonb;
   v_new_config jsonb;
 BEGIN
   -- Lock the session row for update
@@ -167,22 +215,33 @@ BEGIN
   SET is_eliminated = false
   WHERE session_id = p_session_id;
 
-  -- Handle game type specific start logic
-  IF v_session.game_type = 'vote_reveal' THEN
-    -- Pick a random prompt matching vote_reveal and category
+  -- Handle game type specific start logic (vote_reveal & most_likely share the
+  -- same vote/reveal round mechanics; the engine column keys the prompt pool)
+  IF v_session.game_type IN ('vote_reveal', 'most_likely') THEN
+    -- Pick a random prompt matching this session's engine and category
     SELECT * INTO v_prompt
     FROM game_prompts
-    WHERE engine = 'vote_reveal' AND category = v_session.category
+    WHERE engine = v_session.game_type AND category = v_session.category
     ORDER BY random()
     LIMIT 1;
 
-    -- Fallback to any vote_reveal prompt if category is empty
+    -- Fallback to any prompt of this engine if category is empty
     IF v_prompt.id IS NULL THEN
       SELECT * INTO v_prompt
       FROM game_prompts
-      WHERE engine = 'vote_reveal'
+      WHERE engine = v_session.game_type
       ORDER BY random()
       LIMIT 1;
+    END IF;
+
+    -- A null options column means "vote for a player" (most_likely): build the
+    -- option list from the session's active players instead of fixed text
+    v_options := v_prompt.options;
+    IF v_options IS NULL THEN
+      SELECT jsonb_agg(jsonb_build_object('id', gp.id, 'display_name', gp.display_name))
+      INTO v_options
+      FROM game_players gp
+      WHERE gp.session_id = p_session_id AND gp.is_eliminated = false;
     END IF;
 
     v_deadline := now() + interval '20 seconds';
@@ -193,7 +252,7 @@ BEGIN
       'current_prompt', jsonb_build_object(
         'id', v_prompt.id,
         'prompt_text', v_prompt.prompt_text,
-        'options', v_prompt.options,
+        'options', v_options,
         'category', v_prompt.category
       ),
       'used_prompt_ids', jsonb_build_array(v_prompt.id)
@@ -482,6 +541,7 @@ AS $$
 DECLARE
   v_session game_sessions%ROWTYPE;
   v_prompt game_prompts%ROWTYPE;
+  v_options jsonb;
   v_used_ids jsonb;
   v_round int;
   v_new_config jsonb;
@@ -500,10 +560,11 @@ BEGIN
   v_round := COALESCE((v_session.game_config ->> 'round_number')::int, 1) + 1;
   v_used_ids := COALESCE(v_session.game_config -> 'used_prompt_ids', '[]'::jsonb);
 
-  -- Pick unused prompt from category
+  -- Pick unused prompt from category (engine keyed off this session's game type,
+  -- so vote_reveal and most_likely each draw from their own prompt pool)
   SELECT * INTO v_prompt
   FROM game_prompts
-  WHERE engine = 'vote_reveal'
+  WHERE engine = v_session.game_type
     AND category = v_session.category
     AND NOT (v_used_ids @> to_jsonb(id::text))
   ORDER BY random()
@@ -513,18 +574,28 @@ BEGIN
   IF v_prompt.id IS NULL THEN
     SELECT * INTO v_prompt
     FROM game_prompts
-    WHERE engine = 'vote_reveal' AND category = v_session.category
+    WHERE engine = v_session.game_type AND category = v_session.category
     ORDER BY random()
     LIMIT 1;
   END IF;
 
-  -- Fallback to any vote_reveal prompt
+  -- Fallback to any prompt of this engine
   IF v_prompt.id IS NULL THEN
     SELECT * INTO v_prompt
     FROM game_prompts
-    WHERE engine = 'vote_reveal'
+    WHERE engine = v_session.game_type
     ORDER BY random()
     LIMIT 1;
+  END IF;
+
+  -- A null options column means "vote for a player" (most_likely): build the
+  -- option list from the session's active players instead of fixed text
+  v_options := v_prompt.options;
+  IF v_options IS NULL THEN
+    SELECT jsonb_agg(jsonb_build_object('id', gp.id, 'display_name', gp.display_name))
+    INTO v_options
+    FROM game_players gp
+    WHERE gp.session_id = p_session_id AND gp.is_eliminated = false;
   END IF;
 
   v_deadline := now() + interval '20 seconds';
@@ -536,7 +607,7 @@ BEGIN
     'current_prompt', jsonb_build_object(
       'id', v_prompt.id,
       'prompt_text', v_prompt.prompt_text,
-      'options', v_prompt.options,
+      'options', v_options,
       'category', v_prompt.category
     ),
     'used_prompt_ids', v_used_ids
@@ -592,8 +663,8 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'message', 'Game not playing');
   END IF;
 
-  -- For vote_reveal, timeout marks voting_phase as 'revealed'
-  IF v_session.game_type = 'vote_reveal' THEN
+  -- For vote_reveal & most_likely, timeout marks voting_phase as 'revealed'
+  IF v_session.game_type IN ('vote_reveal', 'most_likely') THEN
     v_config := jsonb_set(v_session.game_config, '{voting_phase}', '"revealed"'::jsonb);
     UPDATE game_sessions
     SET game_config = v_config

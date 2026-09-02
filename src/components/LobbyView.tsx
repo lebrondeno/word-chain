@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../context/GameContext';
 import { CATEGORIES } from '../data';
-import { VOTE_REVEAL_CATEGORIES, GAME_TYPES } from '../data/prompts';
+import { VOTE_REVEAL_CATEGORIES, MOST_LIKELY_CATEGORIES, GAME_TYPES } from '../data/prompts';
 import { Play, Copy, Check, Share2, Crown, Users, AlertCircle, Settings2 } from 'lucide-react';
 import { ShareModal } from './ShareModal';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -21,10 +21,14 @@ export const LobbyView: React.FC = () => {
   const gameType = session.game_type || 'word_chain';
   const joinUrl = typeof window !== 'undefined' ? `${window.location.origin}/join/${session.room_code}` : '';
 
-  // Get active category information based on game type
+  // Get active game type / category information
   const isVoteReveal = gameType === 'vote_reveal';
+  const isMostLikely = gameType === 'most_likely';
+  const activeGameType = GAME_TYPES[gameType] || GAME_TYPES.word_chain;
   const categoryInfo = isVoteReveal
     ? VOTE_REVEAL_CATEGORIES[session.category] || VOTE_REVEAL_CATEGORIES['general']
+    : isMostLikely
+    ? MOST_LIKELY_CATEGORIES[session.category] || MOST_LIKELY_CATEGORIES['general']
     : CATEGORIES[session.category] || CATEGORIES['cities'];
 
   const handleCopyLink = () => {
@@ -42,7 +46,7 @@ export const LobbyView: React.FC = () => {
   const handleGameTypeChange = async (newType: string) => {
     if (!isHost || updatingSettings || newType === gameType) return;
     setUpdatingSettings(true);
-    const defaultCat = newType === 'vote_reveal' ? 'general' : 'cities';
+    const defaultCat = newType === 'vote_reveal' || newType === 'most_likely' ? 'general' : 'cities';
     await setGameSettings(newType, defaultCat);
     setUpdatingSettings(false);
   };
@@ -81,13 +85,13 @@ export const LobbyView: React.FC = () => {
         {starting ? (
           <span className="flex items-center gap-2">
             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            Starting {isVoteReveal ? 'Would You Rather' : 'Word Chain'}...
+            Starting {activeGameType.name}...
           </span>
         ) : (
           <>
             <Play className="w-5 h-5 fill-current" />
             <span>
-              Start {isVoteReveal ? 'Would You Rather' : 'Word Chain'} ({players.length}{' '}
+              Start {activeGameType.name} ({players.length}{' '}
               {players.length === 1 ? 'Player' : 'Players'})
             </span>
           </>
@@ -103,7 +107,7 @@ export const LobbyView: React.FC = () => {
   ) : (
     <div className="p-3.5 bg-slate-950/70 border border-slate-800/80 rounded-2xl flex items-center justify-center gap-2.5 text-slate-300 text-xs">
       <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-ping" />
-      <span>Waiting for host to start {isVoteReveal ? 'Would You Rather' : 'Word Chain'}...</span>
+      <span>Waiting for host to start {activeGameType.name}...</span>
     </div>
   );
 
@@ -115,8 +119,8 @@ export const LobbyView: React.FC = () => {
 
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full text-xs font-semibold">
-            <span>{isVoteReveal ? '🗳️' : '⛓️'}</span>
-            <span>{isVoteReveal ? 'Would You Rather' : 'Word Chain'}</span>
+            <span>{activeGameType.icon}</span>
+            <span>{activeGameType.name}</span>
           </div>
           <button
             onClick={() => setIsShareOpen(true)}
@@ -185,75 +189,82 @@ export const LobbyView: React.FC = () => {
                       <span className="font-bold text-xs text-white">{type.name}</span>
                     </div>
                     <span className="text-[10px] text-slate-400 line-clamp-2 leading-tight">
-                      {type.id === 'word_chain' ? 'Letter-linking elimination' : 'Group vote & reveal'}
+                      {type.id === 'word_chain'
+                        ? 'Letter-linking elimination'
+                        : type.id === 'most_likely'
+                        ? 'Vote for the player who fits'
+                        : 'Group vote & reveal'}
                     </span>
                   </button>
                 );
               })}
             </div>
 
-            {/* Category Selector */}
-            <div className="pt-2">
-              <label className="block text-xs font-semibold text-slate-300 mb-2">
-                {isVoteReveal ? 'Prompt Theme' : 'Word Category'}
-              </label>
+            {/* Category Selector - most_likely only has a single "General" pool,
+                so no theme selection is needed for it */}
+            {gameType !== 'most_likely' && (
+              <div className="pt-2">
+                <label className="block text-xs font-semibold text-slate-300 mb-2">
+                  {isVoteReveal ? 'Prompt Theme' : 'Word Category'}
+                </label>
 
-              {isVoteReveal ? (
-                /* Vote & Reveal categories */
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.values(VOTE_REVEAL_CATEGORIES).map((cat) => {
-                    const isSelected = session.category === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => handleCategoryChange(cat.id)}
-                        disabled={updatingSettings}
-                        className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
-                          isSelected
-                            ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
-                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                        }`}
-                      >
-                        <span className="text-xl">{cat.icon}</span>
-                        <div className="overflow-hidden">
-                          <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
-                          <div className="text-[10px] text-slate-400 truncate">{cat.description}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                /* Word Chain categories */
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {Object.values(CATEGORIES).map((cat) => {
-                    const isSelected = session.category === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => handleCategoryChange(cat.id)}
-                        disabled={updatingSettings}
-                        className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2 ${
-                          isSelected
-                            ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-inner'
-                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                        }`}
-                      >
-                        <span className="text-lg">{cat.icon}</span>
-                        <div className="overflow-hidden">
-                          <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {cat.words.length}+ words
+                {isVoteReveal ? (
+                  /* Vote & Reveal categories */
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.values(VOTE_REVEAL_CATEGORIES).map((cat) => {
+                      const isSelected = session.category === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => handleCategoryChange(cat.id)}
+                          disabled={updatingSettings}
+                          className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                            isSelected
+                              ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
+                              : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                          }`}
+                        >
+                          <span className="text-xl">{cat.icon}</span>
+                          <div className="overflow-hidden">
+                            <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{cat.description}</div>
                           </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* Word Chain categories */
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {Object.values(CATEGORIES).map((cat) => {
+                      const isSelected = session.category === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => handleCategoryChange(cat.id)}
+                          disabled={updatingSettings}
+                          className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2 ${
+                            isSelected
+                              ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-inner'
+                              : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                          }`}
+                        >
+                          <span className="text-lg">{cat.icon}</span>
+                          <div className="overflow-hidden">
+                            <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {cat.words.length}+ words
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           /* Non-host overview card */
@@ -262,9 +273,7 @@ export const LobbyView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="text-2xl">{categoryInfo.icon}</span>
                 <div>
-                  <div className="font-bold text-sm text-white">
-                    {isVoteReveal ? 'Would You Rather' : 'Word Chain'}
-                  </div>
+                  <div className="font-bold text-sm text-white">{activeGameType.name}</div>
                   <div className="text-xs text-indigo-400 font-medium">{categoryInfo.name}</div>
                 </div>
               </div>
@@ -275,6 +284,8 @@ export const LobbyView: React.FC = () => {
             <p className="text-[11px] text-slate-400">
               {isVoteReveal
                 ? 'Vote on tough choices within 20s and see how your group answered.'
+                : isMostLikely
+                ? 'Vote for the player who best fits each prompt within 20s.'
                 : 'Take turns linking words by last letter before the 30s timer runs out.'}
             </p>
           </div>

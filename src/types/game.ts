@@ -1,6 +1,6 @@
 export type SessionStatus = 'lobby' | 'playing' | 'finished';
 
-export type GameType = 'word_chain' | 'vote_reveal';
+export type GameType = 'word_chain' | 'vote_reveal' | 'most_likely';
 
 export interface UsedWordItem {
   word: string;
@@ -10,10 +10,16 @@ export interface UsedWordItem {
   submitted_at?: string;
 }
 
+// A "most_likely" prompt's option is a player to vote for, rather than fixed text
+export interface PlayerOption {
+  id: string;
+  display_name: string;
+}
+
 export interface VoteRevealPrompt {
   id: string;
   prompt_text: string;
-  options: [string, string] | string[];
+  options: [string, string] | string[] | PlayerOption[] | null;
   category?: string;
 }
 

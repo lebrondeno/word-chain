@@ -6,13 +6,11 @@ import { RoomEntryView } from './components/RoomEntryView';
 import { LobbyView } from './components/LobbyView';
 import { GameView } from './components/GameView';
 import { FinishedView } from './components/FinishedView';
-import { SupabaseModal } from './components/SupabaseModal';
 import { sanitizeRoomCode } from './lib/roomCode';
 
 function MainContent() {
   const { session, loading } = useGame();
   const [initialRoomCode, setInitialRoomCode] = useState<string>('');
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
 
   // Parse path-based or query-based join links e.g. /join/ABCD or ?join=ABCD
   useEffect(() => {
@@ -44,12 +42,7 @@ function MainContent() {
   // View routing driven by session and status
   const renderView = () => {
     if (!session) {
-      return (
-        <RoomEntryView
-          initialRoomCode={initialRoomCode}
-          onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-        />
-      );
+      return <RoomEntryView initialRoomCode={initialRoomCode} />;
     }
 
     switch (session.status) {
@@ -60,12 +53,7 @@ function MainContent() {
       case 'finished':
         return <FinishedView />;
       default:
-        return (
-          <RoomEntryView
-            initialRoomCode={initialRoomCode}
-            onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-          />
-        );
+        return <RoomEntryView initialRoomCode={initialRoomCode} />;
     }
   };
 
@@ -87,11 +75,6 @@ function MainContent() {
       <footer className="relative z-10 py-6 border-t border-slate-900 text-center text-[11px] text-slate-500">
         Multiplayer Word Chain • Powered by React, Supabase & Realtime
       </footer>
-
-      <SupabaseModal
-        isOpen={isSupabaseModalOpen}
-        onClose={() => setIsSupabaseModalOpen(false)}
-      />
     </div>
   );
 }

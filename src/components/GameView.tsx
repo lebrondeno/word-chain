@@ -4,6 +4,7 @@ import { useGame } from '../context/GameContext';
 import { CATEGORIES, validateWordSubmission } from '../data';
 import { WordHistoryDrawer } from './WordHistoryDrawer';
 import { VoteRevealGameView } from './VoteRevealGameView';
+import { MostLikelyGameView } from './MostLikelyGameView';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
   Clock,
@@ -49,6 +50,11 @@ export const GameView: React.FC = () => {
   // Delegate to VoteRevealGameView for vote_reveal game engine
   if (session.game_type === 'vote_reveal') {
     return <VoteRevealGameView />;
+  }
+
+  // Delegate to MostLikelyGameView for most_likely game engine
+  if (session.game_type === 'most_likely') {
+    return <MostLikelyGameView />;
   }
 
   const categoryInfo = CATEGORIES[session.category] || CATEGORIES['cities'];

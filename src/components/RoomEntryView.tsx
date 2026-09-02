@@ -8,12 +8,10 @@ import { Play, UserPlus, Sparkles, AlertCircle, ArrowRight, ShieldCheck } from '
 
 interface RoomEntryViewProps {
   initialRoomCode?: string;
-  onOpenSupabaseModal?: () => void;
 }
 
 export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
   initialRoomCode,
-  onOpenSupabaseModal,
 }) => {
   const { createGame, joinGame, loading, error, setError } = useGame();
 
@@ -41,7 +39,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
 
   const handleGameTypeSelect = (typeId: string) => {
     setGameType(typeId);
-    if (typeId === 'vote_reveal') {
+    if (typeId === 'vote_reveal' || typeId === 'most_likely') {
       setCategory('general');
     } else {
       setCategory('cities');
@@ -97,17 +95,9 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
         <div className="mb-6 p-4 bg-amber-950/40 border border-amber-800/40 rounded-2xl flex items-start gap-3 text-amber-200 text-xs">
           <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <span className="font-semibold text-white block mb-0.5">Setup Supabase Connection</span>
-            Connect your Supabase credentials to enable live multiplayer rooms and realtime syncing.
+            <span className="font-semibold text-white block mb-0.5">Supabase Not Configured</span>
+            Set the <code className="bg-amber-950 px-1 py-0.5 rounded text-amber-100">VITE_SUPABASE_URL</code> and <code className="bg-amber-950 px-1 py-0.5 rounded text-amber-100">VITE_SUPABASE_ANON_KEY</code> environment variables to enable live multiplayer rooms and realtime syncing.
           </div>
-          {onOpenSupabaseModal && (
-            <button
-              onClick={onOpenSupabaseModal}
-              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-xs font-semibold border border-amber-500/30 transition shrink-0"
-            >
-              Configure
-            </button>
-          )}
         </div>
       )}
 
@@ -203,64 +193,67 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
               </div>
             </div>
 
-            {/* Category Picker */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                {isVoteReveal ? 'Theme' : 'Word Category'}
-              </label>
+            {/* Category Picker - most_likely only has a single "General" pool, so
+                no theme selection is needed for it */}
+            {gameType !== 'most_likely' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  {isVoteReveal ? 'Theme' : 'Word Category'}
+                </label>
 
-              {isVoteReveal ? (
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.values(VOTE_REVEAL_CATEGORIES).map((cat) => {
-                    const isSelected = category === cat.id;
-                    return (
-                      <button
-                        type="button"
-                        key={cat.id}
-                        onClick={() => setCategory(cat.id)}
-                        className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
-                          isSelected
-                            ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
-                            : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        <span className="text-xl">{cat.icon}</span>
-                        <div className="overflow-hidden">
-                          <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
-                          <div className="text-[10px] text-slate-400 truncate">{cat.description}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.values(CATEGORIES).map((cat) => {
-                    const isSelected = category === cat.id;
-                    return (
-                      <button
-                        type="button"
-                        key={cat.id}
-                        onClick={() => setCategory(cat.id)}
-                        className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
-                          isSelected
-                            ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-inner'
-                            : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                        }`}
-                      >
-                        <span className="text-xl">{cat.icon}</span>
-                        <div className="overflow-hidden">
-                          <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {cat.words.length}+ words
+                {isVoteReveal ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.values(VOTE_REVEAL_CATEGORIES).map((cat) => {
+                      const isSelected = category === cat.id;
+                      return (
+                        <button
+                          type="button"
+                          key={cat.id}
+                          onClick={() => setCategory(cat.id)}
+                          className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                            isSelected
+                              ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
+                              : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span className="text-xl">{cat.icon}</span>
+                          <div className="overflow-hidden">
+                            <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{cat.description}</div>
                           </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.values(CATEGORIES).map((cat) => {
+                      const isSelected = category === cat.id;
+                      return (
+                        <button
+                          type="button"
+                          key={cat.id}
+                          onClick={() => setCategory(cat.id)}
+                          className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                            isSelected
+                              ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-inner'
+                              : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                          }`}
+                        >
+                          <span className="text-xl">{cat.icon}</span>
+                          <div className="overflow-hidden">
+                            <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {cat.words.length}+ words
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             <button
               type="submit"

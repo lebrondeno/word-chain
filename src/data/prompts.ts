@@ -1,13 +1,13 @@
 export interface PromptData {
   id: string;
-  engine: 'vote_reveal';
-  category: 'general' | 'couples';
+  engine: 'vote_reveal' | 'most_likely';
+  category: string;
   prompt_text: string;
-  options: [string, string];
+  options: [string, string] | string[] | null;
 }
 
 export interface GameTypeInfo {
-  id: 'word_chain' | 'vote_reveal';
+  id: 'word_chain' | 'vote_reveal' | 'most_likely';
   name: string;
   shortName: string;
   icon: string;
@@ -27,6 +27,27 @@ export const VOTE_REVEAL_CATEGORIES: Record<string, { id: string; name: string; 
     name: 'Couples & Dates',
     icon: '❤️',
     description: 'Playful relationship & lifestyle scenarios',
+  },
+  majority_rules: {
+    id: 'majority_rules',
+    name: 'Majority Rules',
+    icon: '🙋',
+    description: 'Binary funny & opinion questions',
+  },
+  boys_debate: {
+    id: 'boys_debate',
+    name: "Boys' Debate",
+    icon: '🗣️',
+    description: 'Funny controversial yes/no takes',
+  },
+};
+
+export const MOST_LIKELY_CATEGORIES: Record<string, { id: string; name: string; icon: string; description: string }> = {
+  general: {
+    id: 'general',
+    name: 'General',
+    icon: '👀',
+    description: "Classic who's-most-likely prompts for any group",
   },
 };
 
@@ -54,6 +75,18 @@ export const GAME_TYPES: Record<string, GameTypeInfo> = {
     categories: [
       { id: 'general', name: 'General Fun', icon: '🎲', description: 'Quirky & classic dilemmas' },
       { id: 'couples', name: 'Couples & Dates', icon: '❤️', description: 'Relationship scenarios' },
+      { id: 'majority_rules', name: 'Majority Rules', icon: '🙋', description: 'Binary funny & opinion questions' },
+      { id: 'boys_debate', name: "Boys' Debate", icon: '🗣️', description: 'Funny controversial yes/no takes' },
+    ],
+  },
+  most_likely: {
+    id: 'most_likely',
+    name: "Who's Most Likely",
+    shortName: 'Most Likely',
+    icon: '👀',
+    description: 'Vote for the friend who best fits each prompt',
+    categories: [
+      { id: 'general', name: 'General', icon: '👀', description: "Classic who's-most-likely prompts" },
     ],
   },
 };
@@ -173,5 +206,116 @@ export const SEED_PROMPTS: PromptData[] = [
     category: 'couples',
     prompt_text: 'Would you rather binge a 10-season TV show together in one weekend or watch a new movie every night for a month?',
     options: ['Binge 10-season show', 'Movie every night'],
+  },
+
+  // Majority Rules (5 prompts)
+  {
+    id: '11111111-0003-4000-8000-000000000001',
+    engine: 'vote_reveal',
+    category: 'majority_rules',
+    prompt_text: 'Which is worse: being left on read or being replied to with just "😂"?',
+    options: ['Left on read', 'Replied with 😂'],
+  },
+  {
+    id: '11111111-0003-4000-8000-000000000002',
+    engine: 'vote_reveal',
+    category: 'majority_rules',
+    prompt_text: "Which is worse: forgetting someone's name right after they told you, or forgetting your own PIN at checkout?",
+    options: ['Forgetting a name', 'Forgetting your PIN'],
+  },
+  {
+    id: '11111111-0003-4000-8000-000000000003',
+    engine: 'vote_reveal',
+    category: 'majority_rules',
+    prompt_text: 'Which is more annoying: slow wifi or a phone stuck on 1% battery for 10 minutes?',
+    options: ['Slow wifi', 'Stuck at 1% battery'],
+  },
+  {
+    id: '11111111-0003-4000-8000-000000000004',
+    engine: 'vote_reveal',
+    category: 'majority_rules',
+    prompt_text: "Which is worse: loud chewing or someone tapping their pen the whole meeting?",
+    options: ['Loud chewing', 'Pen tapping'],
+  },
+  {
+    id: '11111111-0003-4000-8000-000000000005',
+    engine: 'vote_reveal',
+    category: 'majority_rules',
+    prompt_text: 'Which is a bigger red flag: replying "k" to everything or double-texting constantly?',
+    options: ['Replying just "k"', 'Double-texting'],
+  },
+
+  // Boys' Debate (5 prompts)
+  {
+    id: '11111111-0004-4000-8000-000000000001',
+    engine: 'vote_reveal',
+    category: 'boys_debate',
+    prompt_text: 'Is a PS5 worth buying if you already have a working PS4?',
+    options: ['Yes', 'No'],
+  },
+  {
+    id: '11111111-0004-4000-8000-000000000002',
+    engine: 'vote_reveal',
+    category: 'boys_debate',
+    prompt_text: 'Is watching football with your boys better than going on a date that same night?',
+    options: ['Yes', 'No'],
+  },
+  {
+    id: '11111111-0004-4000-8000-000000000003',
+    engine: 'vote_reveal',
+    category: 'boys_debate',
+    prompt_text: "Is it acceptable to leave a friend's house without saying goodbye to everyone?",
+    options: ['Yes', 'No'],
+  },
+  {
+    id: '11111111-0004-4000-8000-000000000004',
+    engine: 'vote_reveal',
+    category: 'boys_debate',
+    prompt_text: 'Messi or Ronaldo — is this debate actually over by now?',
+    options: ['Messi', 'Ronaldo'],
+  },
+  {
+    id: '11111111-0004-4000-8000-000000000005',
+    engine: 'vote_reveal',
+    category: 'boys_debate',
+    prompt_text: 'Is it okay to check your phone while someone is telling you a story in person?',
+    options: ['Yes', 'No'],
+  },
+
+  // Who's Most Likely (5 prompts) - options null; players are the choices
+  {
+    id: '11111111-0005-4000-8000-000000000001',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to become famous one day?",
+    options: null,
+  },
+  {
+    id: '11111111-0005-4000-8000-000000000002',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to sleep through an important meeting or event?",
+    options: null,
+  },
+  {
+    id: '11111111-0005-4000-8000-000000000003',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to disappear from the group chat for months and reappear like nothing happened?",
+    options: null,
+  },
+  {
+    id: '11111111-0005-4000-8000-000000000004',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to win an argument just by being stubborn, not by being right?",
+    options: null,
+  },
+  {
+    id: '11111111-0005-4000-8000-000000000005',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to still be awake at 3am for no real reason?",
+    options: null,
   },
 ];

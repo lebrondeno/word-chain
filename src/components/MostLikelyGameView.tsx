@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../context/GameContext';
-import { VOTE_REVEAL_CATEGORIES } from '../data/prompts';
+import { MOST_LIKELY_CATEGORIES } from '../data/prompts';
 import { useIsMobile } from '../hooks/useIsMobile';
+import type { PlayerOption } from '../types/game';
 import {
   Clock,
   CheckCircle2,
@@ -13,7 +14,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 
-export const VoteRevealGameView: React.FC = () => {
+export const MostLikelyGameView: React.FC = () => {
   const {
     session,
     players,
@@ -36,34 +37,38 @@ export const VoteRevealGameView: React.FC = () => {
 
   const isHost = Boolean(localPlayer?.isHost);
   const categoryKey = session.category || 'general';
-  const categoryInfo = VOTE_REVEAL_CATEGORIES[categoryKey] || VOTE_REVEAL_CATEGORIES['general'];
+  const categoryInfo = MOST_LIKELY_CATEGORIES[categoryKey] || MOST_LIKELY_CATEGORIES['general'];
   const config = session.game_config || {};
   const roundNumber = config.round_number || 1;
   const votingPhase = config.voting_phase || 'voting';
   const isRevealed = votingPhase === 'revealed';
 
-  // Current prompt
+  // Current prompt. Options are players to vote for rather than fixed text;
+  // fall back to the live active player roster if the config hasn't got any yet.
   const currentPrompt = config.current_prompt || {
     id: 'default',
-    prompt_text: 'Would you rather always be 10 minutes late or always be 20 minutes early?',
-    options: ['Always 10 minutes late', 'Always 20 minutes early'] as [string, string],
+    prompt_text: "Who's most likely to become famous one day?",
+    options: null,
   };
 
-  // vote_reveal prompts always carry fixed text options (never player objects)
-  const optionA = (currentPrompt.options?.[0] as string) || 'Option A';
-  const optionB = (currentPrompt.options?.[1] as string) || 'Option B';
+  const activePlayers = players.filter((p) => !p.is_eliminated);
+  const promptOptions: PlayerOption[] =
+    Array.isArray(currentPrompt.options) && currentPrompt.options.length > 0
+      ? (currentPrompt.options as PlayerOption[])
+      : activePlayers.map((p) => ({ id: p.id, display_name: p.display_name }));
 
   // Round votes
   const currentRoundVotes = votes.filter((v) => v.round_number === roundNumber);
-  const activePlayers = players.filter((p) => !p.is_eliminated);
   const totalActivePlayers = activePlayers.length;
   const totalVotesCast = currentRoundVotes.length;
 
-  const votesForA = currentRoundVotes.filter((v) => v.choice === 'A' || v.choice === optionA);
-  const votesForB = currentRoundVotes.filter((v) => v.choice === 'B' || v.choice === optionB);
-
-  const percentA = totalVotesCast > 0 ? Math.round((votesForA.length / totalVotesCast) * 100) : 50;
-  const percentB = totalVotesCast > 0 ? 100 - percentA : 50;
+  // Tally votes per player, most-voted first
+  const tally = promptOptions
+    .map((opt) => ({
+      option: opt,
+      voteCount: currentRoundVotes.filter((v) => v.choice === opt.id).length,
+    }))
+    .sort((a, b) => b.voteCount - a.voteCount);
 
   // Avatar color generator based on player name
   const getAvatarColor = (name: string) => {
@@ -82,10 +87,10 @@ export const VoteRevealGameView: React.FC = () => {
     return colors[Math.abs(hash) % colors.length];
   };
 
-  const handleVote = async (choiceKey: 'A' | 'B') => {
+  const handleVote = async (playerId: string) => {
     if (isRevealed || submittingVote) return;
-    setSubmittingVote(choiceKey);
-    await submitVote(choiceKey);
+    setSubmittingVote(playerId);
+    await submitVote(playerId);
     setSubmittingVote(null);
   };
 
@@ -108,67 +113,42 @@ export const VoteRevealGameView: React.FC = () => {
 
   const voteOptionsContent = (
     <>
-      {/* Option A Button */}
-      <button
-        type="button"
-        onClick={() => handleVote('A')}
-        disabled={Boolean(submittingVote)}
-        className={`relative w-full p-4 sm:p-5 rounded-2xl border-2 text-left transition-all duration-200 group flex items-start gap-4 ${
-          localVote === 'A'
-            ? 'bg-gradient-to-r from-indigo-950/80 to-blue-950/80 border-indigo-500 shadow-lg shadow-indigo-500/20 ring-2 ring-indigo-500/30'
-            : 'bg-slate-950/70 hover:bg-slate-950 border-slate-800 hover:border-indigo-500/60 text-slate-200'
-        }`}
-      >
-        <div
-          className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 transition ${
-            localVote === 'A'
-              ? 'bg-indigo-600 text-white shadow-md'
-              : 'bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
-          }`}
-        >
-          A
-        </div>
-        <div className="flex-1">
-          <div className="text-base font-bold text-white mb-0.5">{optionA}</div>
-          <div className="text-[11px] text-slate-400">
-            {localVote === 'A' ? 'Your selected choice (Tap to change)' : 'Tap to choose Option A'}
-          </div>
-        </div>
-        {localVote === 'A' && (
-          <CheckCircle2 className="w-6 h-6 text-indigo-400 shrink-0 mt-1 animate-scale-in" />
-        )}
-      </button>
-
-      {/* Option B Button */}
-      <button
-        type="button"
-        onClick={() => handleVote('B')}
-        disabled={Boolean(submittingVote)}
-        className={`relative w-full p-4 sm:p-5 rounded-2xl border-2 text-left transition-all duration-200 group flex items-start gap-4 ${
-          localVote === 'B'
-            ? 'bg-gradient-to-r from-pink-950/80 to-purple-950/80 border-pink-500 shadow-lg shadow-pink-500/20 ring-2 ring-pink-500/30'
-            : 'bg-slate-950/70 hover:bg-slate-950 border-slate-800 hover:border-pink-500/60 text-slate-200'
-        }`}
-      >
-        <div
-          className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 transition ${
-            localVote === 'B'
-              ? 'bg-pink-600 text-white shadow-md'
-              : 'bg-slate-800 text-pink-400 group-hover:bg-pink-600 group-hover:text-white'
-          }`}
-        >
-          B
-        </div>
-        <div className="flex-1">
-          <div className="text-base font-bold text-white mb-0.5">{optionB}</div>
-          <div className="text-[11px] text-slate-400">
-            {localVote === 'B' ? 'Your selected choice (Tap to change)' : 'Tap to choose Option B'}
-          </div>
-        </div>
-        {localVote === 'B' && (
-          <CheckCircle2 className="w-6 h-6 text-pink-400 shrink-0 mt-1 animate-scale-in" />
-        )}
-      </button>
+      {promptOptions.map((opt) => {
+        const isMe = opt.id === localPlayer?.playerId;
+        const isSelected = localVote === opt.id;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => handleVote(opt.id)}
+            disabled={Boolean(submittingVote)}
+            className={`relative w-full p-4 rounded-2xl border-2 text-left transition-all duration-200 group flex items-center gap-3.5 ${
+              isSelected
+                ? 'bg-gradient-to-r from-indigo-950/80 to-purple-950/80 border-indigo-500 shadow-lg shadow-indigo-500/20 ring-2 ring-indigo-500/30'
+                : 'bg-slate-950/70 hover:bg-slate-950 border-slate-800 hover:border-indigo-500/60 text-slate-200'
+            }`}
+          >
+            <div
+              className={`w-10 h-10 rounded-xl bg-gradient-to-tr ${getAvatarColor(
+                opt.display_name
+              )} flex items-center justify-center font-black text-sm shrink-0 text-white shadow-md`}
+            >
+              {opt.display_name.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <div className="text-sm font-bold text-white truncate">
+                {opt.display_name} {isMe ? '(You)' : ''}
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {isSelected ? 'Your pick (Tap to change)' : 'Tap to vote'}
+              </div>
+            </div>
+            {isSelected && (
+              <CheckCircle2 className="w-6 h-6 text-indigo-400 shrink-0 animate-scale-in" />
+            )}
+          </button>
+        );
+      })}
     </>
   );
 
@@ -183,7 +163,7 @@ export const VoteRevealGameView: React.FC = () => {
         {advancingRound ? (
           <span className="flex items-center gap-2">
             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            Loading Next Dilemma...
+            Loading Next Prompt...
           </span>
         ) : (
           <>
@@ -219,7 +199,7 @@ export const VoteRevealGameView: React.FC = () => {
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-xs text-white uppercase tracking-wider">
-                  Would You Rather
+                  Who's Most Likely
                 </span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
                   {categoryInfo.name}
@@ -278,7 +258,7 @@ export const VoteRevealGameView: React.FC = () => {
         <div className="text-center mb-6">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold mb-3">
             <HelpCircle className="w-3.5 h-3.5 text-indigo-400" />
-            <span>THE DILEMMA</span>
+            <span>THE PROMPT</span>
           </div>
 
           <h2 className="text-xl sm:text-2xl font-black text-white leading-snug tracking-tight max-w-md mx-auto">
@@ -297,7 +277,7 @@ export const VoteRevealGameView: React.FC = () => {
         {!isRevealed ? (
           <div className="space-y-4">
             <p className="text-center text-xs text-slate-400">
-              Pick your answer below. Votes remain secret until everyone has chosen!
+              Tap whoever fits best. Votes remain secret until everyone has chosen!
             </p>
 
             {/* Vote options - pinned within thumb reach at the bottom on mobile via a
@@ -306,12 +286,12 @@ export const VoteRevealGameView: React.FC = () => {
                 on desktop, unchanged */}
             {isMobile
               ? createPortal(
-                  <div className="fixed bottom-0 inset-x-0 z-30 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-                    <div className="grid grid-cols-1 gap-3 max-w-lg mx-auto">{voteOptionsContent}</div>
+                  <div className="fixed bottom-0 inset-x-0 z-30 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[70vh] overflow-y-auto">
+                    <div className="grid grid-cols-1 gap-2.5 max-w-lg mx-auto">{voteOptionsContent}</div>
                   </div>,
                   document.body
                 )
-              : <div className="grid grid-cols-1 gap-3.5">{voteOptionsContent}</div>}
+              : <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">{voteOptionsContent}</div>}
 
             {/* Voting Status Toast */}
             <div className="pt-2 text-center">
@@ -331,153 +311,72 @@ export const VoteRevealGameView: React.FC = () => {
           </div>
         ) : (
           /* --- PHASE 2: REVEAL RESULTS SCREEN --- */
-          <div className="space-y-6 animate-fade-in">
-            {/* Split Comparison Percentage Bar */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold px-1">
-                <span className="text-indigo-400">
-                  Option A: {percentA}% ({votesForA.length} {votesForA.length === 1 ? 'vote' : 'votes'})
-                </span>
-                <span className="text-pink-400">
-                  Option B: {percentB}% ({votesForB.length} {votesForB.length === 1 ? 'vote' : 'votes'})
-                </span>
-              </div>
+          <div className="space-y-3 animate-fade-in">
+            {tally.map(({ option, voteCount }) => {
+              const percent = totalVotesCast > 0 ? Math.round((voteCount / totalVotesCast) * 100) : 0;
+              const isMe = option.id === localPlayer?.playerId;
+              const votedForThem = currentRoundVotes.filter((v) => v.choice === option.id);
 
-              {/* Progress Split Bar */}
-              <div className="h-4 w-full bg-slate-950 rounded-full overflow-hidden flex border border-slate-800 p-0.5">
+              return (
                 <div
-                  className="h-full bg-gradient-to-r from-indigo-600 to-blue-500 rounded-l-full transition-all duration-700"
-                  style={{ width: `${percentA}%` }}
-                />
-                <div
-                  className="h-full bg-gradient-to-r from-pink-500 to-rose-600 rounded-r-full transition-all duration-700"
-                  style={{ width: `${percentB}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Side-by-side / Stacked Detailed Breakdown */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Option A Breakdown */}
-              <div
-                className={`p-4 rounded-2xl border ${
-                  localVote === 'A'
-                    ? 'bg-indigo-950/40 border-indigo-500/50 ring-1 ring-indigo-500/30'
-                    : 'bg-slate-950/60 border-slate-800'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="px-2 py-0.5 rounded-lg bg-indigo-600 text-white font-black text-xs">
-                    OPTION A
-                  </span>
-                  <span className="text-xs font-bold text-indigo-300">
-                    {votesForA.length} {votesForA.length === 1 ? 'player' : 'players'}
-                  </span>
-                </div>
-
-                <div className="font-bold text-sm text-white mb-3">{optionA}</div>
-
-                {/* Players who voted A */}
-                <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
-                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-1">
-                    Voted By:
+                  key={option.id}
+                  className={`p-3.5 rounded-2xl border ${
+                    localVote === option.id
+                      ? 'bg-indigo-950/40 border-indigo-500/50 ring-1 ring-indigo-500/30'
+                      : 'bg-slate-950/60 border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <div
+                      className={`w-8 h-8 rounded-lg bg-gradient-to-tr ${getAvatarColor(
+                        option.display_name
+                      )} flex items-center justify-center text-xs font-bold text-white shrink-0`}
+                    >
+                      {option.display_name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                      <div className="text-sm font-bold text-white truncate">
+                        {option.display_name} {isMe ? '(You)' : ''}
+                      </div>
+                    </div>
+                    <div className="text-xs font-bold text-indigo-300 shrink-0">
+                      {voteCount} {voteCount === 1 ? 'vote' : 'votes'} • {percent}%
+                    </div>
                   </div>
-                  {votesForA.length === 0 ? (
-                    <div className="text-xs text-slate-500 italic">No votes</div>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {votesForA.map((v) => {
+
+                  {/* Proportional vote bar */}
+                  <div className="h-2.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                    <div
+                      className={`h-full bg-gradient-to-r from-indigo-600 to-purple-500 rounded-full transition-all duration-700`}
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+
+                  {/* Who voted for them */}
+                  {votedForThem.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {votedForThem.map((v) => {
                         const voter = players.find((p) => p.id === v.player_id);
                         const name = voter?.display_name || 'Anonymous';
-                        const isMe = v.player_id === localPlayer?.playerId;
-
+                        const voterIsMe = v.player_id === localPlayer?.playerId;
                         return (
-                          <div
+                          <span
                             key={v.player_id}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium border ${
-                              isMe
+                            className={`text-[10px] px-2 py-0.5 rounded-lg border ${
+                              voterIsMe
                                 ? 'bg-indigo-600/30 border-indigo-500/60 text-white font-bold'
-                                : 'bg-slate-900 border-slate-800 text-slate-300'
+                                : 'bg-slate-900 border-slate-800 text-slate-400'
                             }`}
                           >
-                            <div
-                              className={`w-4 h-4 rounded-full bg-gradient-to-tr ${getAvatarColor(
-                                name
-                              )} text-[9px] font-bold text-white flex items-center justify-center`}
-                            >
-                              {name.charAt(0).toUpperCase()}
-                            </div>
-                            <span>
-                              {name} {isMe ? '(You)' : ''}
-                            </span>
-                          </div>
+                            {name} {voterIsMe ? '(You)' : ''}
+                          </span>
                         );
                       })}
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* Option B Breakdown */}
-              <div
-                className={`p-4 rounded-2xl border ${
-                  localVote === 'B'
-                    ? 'bg-pink-950/40 border-pink-500/50 ring-1 ring-pink-500/30'
-                    : 'bg-slate-950/60 border-slate-800'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="px-2 py-0.5 rounded-lg bg-pink-600 text-white font-black text-xs">
-                    OPTION B
-                  </span>
-                  <span className="text-xs font-bold text-pink-300">
-                    {votesForB.length} {votesForB.length === 1 ? 'player' : 'players'}
-                  </span>
-                </div>
-
-                <div className="font-bold text-sm text-white mb-3">{optionB}</div>
-
-                {/* Players who voted B */}
-                <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
-                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-1">
-                    Voted By:
-                  </div>
-                  {votesForB.length === 0 ? (
-                    <div className="text-xs text-slate-500 italic">No votes</div>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {votesForB.map((v) => {
-                        const voter = players.find((p) => p.id === v.player_id);
-                        const name = voter?.display_name || 'Anonymous';
-                        const isMe = v.player_id === localPlayer?.playerId;
-
-                        return (
-                          <div
-                            key={v.player_id}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium border ${
-                              isMe
-                                ? 'bg-pink-600/30 border-pink-500/60 text-white font-bold'
-                                : 'bg-slate-900 border-slate-800 text-slate-300'
-                            }`}
-                          >
-                            <div
-                              className={`w-4 h-4 rounded-full bg-gradient-to-tr ${getAvatarColor(
-                                name
-                              )} text-[9px] font-bold text-white flex items-center justify-center`}
-                            >
-                              {name.charAt(0).toUpperCase()}
-                            </div>
-                            <span>
-                              {name} {isMe ? '(You)' : ''}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+              );
+            })}
 
             {/* Host Actions (Next Round / End Game) - pinned within thumb reach at the
                 bottom on mobile via a portal (so backdrop-blur/transform ancestors can't
@@ -521,7 +420,6 @@ export const VoteRevealGameView: React.FC = () => {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {activePlayers.map((player) => {
             const hasVoted = currentRoundVotes.some((v) => v.player_id === player.id);
-            const playerVoteObj = currentRoundVotes.find((v) => v.player_id === player.id);
             const isMe = player.id === localPlayer?.playerId;
 
             return (
@@ -546,17 +444,7 @@ export const VoteRevealGameView: React.FC = () => {
                   </div>
                 </div>
 
-                {isRevealed && playerVoteObj ? (
-                  <span
-                    className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
-                      playerVoteObj.choice === 'A'
-                        ? 'bg-indigo-600/40 text-indigo-300'
-                        : 'bg-pink-600/40 text-pink-300'
-                    }`}
-                  >
-                    {playerVoteObj.choice}
-                  </span>
-                ) : hasVoted ? (
+                {hasVoted ? (
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 ml-1" />
                 ) : (
                   <span className="text-[10px] text-amber-400/80 italic ml-1">Voting</span>

@@ -75,8 +75,6 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-public-key
 ```
 
-*(You can also configure or change your Supabase connection directly in the app using the in-app Supabase Setup button!)*
-
 ### 3. Run Development Server
 ```bash
 npm run dev

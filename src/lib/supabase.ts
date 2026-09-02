@@ -1,28 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const STORAGE_KEY_URL = 'word_chain_supabase_url';
-const STORAGE_KEY_ANON = 'word_chain_supabase_anon_key';
-
-export function getSupabaseConfig(): { url: string; anonKey: string } {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-  const localUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_URL) || '' : '';
-  const localKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ANON) || '' : '';
-
+function getSupabaseConfig(): { url: string; anonKey: string } {
   return {
-    url: envUrl || localUrl,
-    anonKey: envKey || localKey,
+    url: import.meta.env.VITE_SUPABASE_URL || '',
+    anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
   };
-}
-
-export function saveSupabaseConfig(url: string, anonKey: string) {
-  if (typeof window !== 'undefined') {
-    if (url) localStorage.setItem(STORAGE_KEY_URL, url.trim());
-    if (anonKey) localStorage.setItem(STORAGE_KEY_ANON, anonKey.trim());
-    // Reset client cache
-    clientInstance = null;
-  }
 }
 
 export function isSupabaseConfigured(): boolean {

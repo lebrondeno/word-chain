@@ -1,32 +1,26 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
-import { isSupabaseConfigured } from '../lib/supabase';
 import { soundManager } from '../lib/audio';
 import {
   Volume2,
   VolumeX,
   HelpCircle,
-  Database,
   LogOut,
   Share2,
 } from 'lucide-react';
 import { RulesModal } from './RulesModal';
-import { SupabaseModal } from './SupabaseModal';
 import { ShareModal } from './ShareModal';
 
 export const Navbar: React.FC = () => {
   const { session, leaveGame } = useGame();
   const [isMuted, setIsMuted] = useState(() => soundManager.getMuted());
   const [isRulesOpen, setIsRulesOpen] = useState(false);
-  const [isSupabaseOpen, setIsSupabaseOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
 
   const handleToggleSound = () => {
     const nextMuted = soundManager.toggleMute();
     setIsMuted(nextMuted);
   };
-
-  const configured = isSupabaseConfigured();
 
   return (
     <>
@@ -92,22 +86,6 @@ export const Navbar: React.FC = () => {
               )}
             </button>
 
-            {/* Supabase connection modal - same 44px minimum tap target on mobile */}
-            <button
-              onClick={() => setIsSupabaseOpen(true)}
-              title={configured ? 'Supabase Connected' : 'Supabase Not Configured'}
-              className={`min-w-11 min-h-11 sm:min-w-0 sm:min-h-0 p-1.5 sm:p-2 rounded-xl border transition flex items-center justify-center gap-1.5 text-xs shrink-0 ${
-                configured
-                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
-                  : 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20 animate-pulse'
-              }`}
-            >
-              <Database className="w-4 h-4" />
-              <span className="hidden md:inline font-medium">
-                {configured ? 'Supabase' : 'Setup DB'}
-              </span>
-            </button>
-
             {/* Leave Room Button - always visible & tappable, never clipped;
                 44px minimum tap target on mobile */}
             {session && (
@@ -125,7 +103,6 @@ export const Navbar: React.FC = () => {
 
       {/* Modals */}
       <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} />
-      <SupabaseModal isOpen={isSupabaseOpen} onClose={() => setIsSupabaseOpen(false)} />
       {session && (
         <ShareModal
           isOpen={isShareOpen}
