@@ -75,7 +75,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const timeoutTriggeredRef = useRef<string | null>(null);
   const realtimeChannelStateRef = useRef<{
     sessionId: string;
-    channel: ReturnType<ReturnType<typeof getSupabase>['channel']>;
+    channels: ReturnType<ReturnType<typeof getSupabase>['channel']>[];
     refCount: number;
   } | null>(null);
 
@@ -151,32 +151,31 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const sessionId = session.id;
 
     // React StrictMode runs this effect's cleanup and then re-runs the effect
-    // again synchronously in dev. If that were allowed to create a second
-    // channel with the exact same postgres_changes filters while the first
-    // one is still registered, Supabase Realtime's server-side subscription
-    // for that filter ends up shared between the two channels - and removing
-    // either one (which the first channel's cleanup does) tears down that
-    // shared registration entirely, leaving the survivor "SUBSCRIBED" but
-    // silently never receiving any events again. That's the root cause of
-    // votes/session updates not appearing live between two tabs.
+    // again synchronously in dev. A ref persists across that synchronous
+    // mount/cleanup/mount, so we reuse the same channels instead of creating
+    // new ones, with a ref count to know when they're genuinely no longer
+    // needed. The cleanup's decrement is deferred to a microtask so a
+    // same-tick remount (StrictMode) increments the count again first.
     //
-    // A ref persists across StrictMode's synchronous mount/cleanup/mount, so
-    // we use it to reuse the same channel instead of creating a new one, with
-    // a ref count to know when the channel is genuinely no longer needed. The
-    // cleanup's decrement is deferred to a microtask so a same-tick remount
-    // (StrictMode) increments the count again before we'd otherwise remove it.
+    // Each table gets its OWN channel rather than being multiplexed onto one
+    // shared channel via multiple .on('postgres_changes', ...) calls. If any
+    // single table's postgres_changes registration is rejected by the server
+    // (e.g. that table isn't in the `supabase_realtime` publication), a
+    // shared channel's entire bind silently fails and NONE of its tables
+    // deliver events - even though .subscribe() still reports "SUBSCRIBED".
+    // Splitting channels means a misconfigured table can't take the others
+    // down with it.
     const existing = realtimeChannelStateRef.current;
 
     if (existing && existing.sessionId === sessionId) {
       existing.refCount += 1;
     } else {
       if (existing) {
-        supabase.removeChannel(existing.channel);
+        existing.channels.forEach((ch) => supabase.removeChannel(ch));
       }
 
-      const channel = supabase.channel(`session_realtime_${sessionId}_${Date.now()}`);
-
-      channel
+      const sessionsChannel = supabase
+        .channel(`session_realtime_sessions_${sessionId}_${Date.now()}`)
         .on(
           'postgres_changes',
           {
@@ -195,6 +194,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           }
         )
+        .subscribe();
+
+      const playersChannel = supabase
+        .channel(`session_realtime_players_${sessionId}_${Date.now()}`)
         .on(
           'postgres_changes',
           {
@@ -214,6 +217,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           }
         )
+        .subscribe();
+
+      const votesChannel = supabase
+        .channel(`session_realtime_votes_${sessionId}_${Date.now()}`)
         .on(
           'postgres_changes',
           {
@@ -234,7 +241,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         )
         .subscribe();
 
-      realtimeChannelStateRef.current = { sessionId, channel, refCount: 1 };
+      realtimeChannelStateRef.current = {
+        sessionId,
+        channels: [sessionsChannel, playersChannel, votesChannel],
+        refCount: 1,
+      };
     }
 
     return () => {
@@ -243,7 +254,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (state && state.sessionId === sessionId) {
           state.refCount -= 1;
           if (state.refCount <= 0) {
-            supabase.removeChannel(state.channel);
+            state.channels.forEach((ch) => supabase.removeChannel(ch));
             realtimeChannelStateRef.current = null;
           }
         }
