@@ -77,11 +77,13 @@ export const Navbar: React.FC = () => {
               <HelpCircle className="w-5 h-5" />
             </button>
 
-            {/* Sound Toggle */}
+            {/* Sound Toggle - min-w/h-11 (44px) meets the iOS/Android minimum tap
+                target on mobile; sm:min-w/h-0 lets the original p-2 sizing govern
+                on desktop, unchanged */}
             <button
               onClick={handleToggleSound}
               title={isMuted ? 'Unmute audio' : 'Mute audio'}
-              className="p-1.5 sm:p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800/80 transition shrink-0"
+              className="min-w-11 min-h-11 sm:min-w-0 sm:min-h-0 flex items-center justify-center p-1.5 sm:p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800/80 transition shrink-0"
             >
               {isMuted ? (
                 <VolumeX className="w-5 h-5 text-slate-500" />
@@ -90,11 +92,11 @@ export const Navbar: React.FC = () => {
               )}
             </button>
 
-            {/* Supabase connection modal */}
+            {/* Supabase connection modal - same 44px minimum tap target on mobile */}
             <button
               onClick={() => setIsSupabaseOpen(true)}
               title={configured ? 'Supabase Connected' : 'Supabase Not Configured'}
-              className={`p-1.5 sm:p-2 rounded-xl border transition flex items-center gap-1.5 text-xs shrink-0 ${
+              className={`min-w-11 min-h-11 sm:min-w-0 sm:min-h-0 p-1.5 sm:p-2 rounded-xl border transition flex items-center justify-center gap-1.5 text-xs shrink-0 ${
                 configured
                   ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
                   : 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20 animate-pulse'
@@ -106,12 +108,13 @@ export const Navbar: React.FC = () => {
               </span>
             </button>
 
-            {/* Leave Room Button - always visible & tappable, never clipped */}
+            {/* Leave Room Button - always visible & tappable, never clipped;
+                44px minimum tap target on mobile */}
             {session && (
               <button
                 onClick={leaveGame}
                 title="Leave room"
-                className="p-1.5 sm:p-2 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-xl transition shrink-0"
+                className="min-w-11 min-h-11 sm:min-w-0 sm:min-h-0 flex items-center justify-center p-1.5 sm:p-2 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-xl transition shrink-0"
               >
                 <LogOut className="w-4 h-4" />
               </button>
