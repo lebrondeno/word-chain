@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { GameProvider, useGame } from './context/GameContext';
 import { Navbar } from './components/Navbar';
 import { RoomEntryView } from './components/RoomEntryView';
@@ -99,6 +100,7 @@ export function App() {
   return (
     <GameProvider>
       <MainContent />
+      <Analytics />
     </GameProvider>
   );
 }
