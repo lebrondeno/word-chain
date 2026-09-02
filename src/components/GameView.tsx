@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useGame } from '../context/GameContext';
 import { CATEGORIES, validateWordSubmission } from '../data';
 import { WordHistoryDrawer } from './WordHistoryDrawer';
 import { VoteRevealGameView } from './VoteRevealGameView';
+import { useIsMobile } from '../hooks/useIsMobile';
 import {
   Clock,
   Send,
@@ -28,6 +30,7 @@ export const GameView: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [localFeedback, setLocalFeedback] = useState<{ valid: boolean; message: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
 
   // Auto-focus input when it becomes user's turn
   useEffect(() => {
@@ -116,8 +119,67 @@ export const GameView: React.FC = () => {
   const isRed = timeRemaining < 7;
   const isAmber = timeRemaining >= 7 && timeRemaining <= 15;
 
+  const wordInputContent = (
+    <>
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputWord}
+          onChange={handleInputChange}
+          disabled={submitting}
+          placeholder={
+            requiredLetter
+              ? `Enter ${categoryInfo.name.toLowerCase()} starting with "${requiredLetter}"...`
+              : `Enter any ${categoryInfo.name.toLowerCase()}...`
+          }
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck="false"
+          className="w-full bg-slate-950 border-2 border-indigo-500/70 focus:border-indigo-400 rounded-2xl px-4 py-3.5 text-base sm:text-lg font-medium text-white placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/20 transition shadow-inner"
+        />
+        <button
+          type="submit"
+          disabled={submitting || !inputWord.trim()}
+          className="absolute right-2 top-2 bottom-2 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl font-semibold text-xs sm:text-sm transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-40"
+        >
+          {submitting ? (
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <>
+              <span>Submit</span>
+              <Send className="w-3.5 h-3.5" />
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Instant Validation Hint */}
+      {localFeedback && (
+        <div
+          className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${
+            localFeedback.valid
+              ? 'text-emerald-300 bg-emerald-950/40 border border-emerald-800/40'
+              : 'text-rose-300 bg-rose-950/40 border border-rose-800/40'
+          }`}
+        >
+          {localFeedback.valid ? (
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          ) : (
+            <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+          )}
+          <span>{localFeedback.message}</span>
+        </div>
+      )}
+    </>
+  );
+
   return (
-    <div className="w-full max-w-lg mx-auto px-4 py-4 space-y-4 animate-fade-in">
+    <div
+      className={`w-full max-w-lg mx-auto px-4 pt-4 space-y-4 animate-fade-in ${
+        isMyTurn ? 'pb-32 sm:pb-4' : 'pb-4'
+      }`}
+    >
       {/* 1. Header Bar: Category & Turn Timer Bar */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-lg backdrop-blur-sm">
         <div className="flex items-center justify-between mb-2">
@@ -222,60 +284,26 @@ export const GameView: React.FC = () => {
           )}
         </div>
 
-        {/* 4. Active Player Input Form */}
+        {/* 4. Active Player Input Form - pinned within thumb reach at the bottom on
+            mobile via a portal (so backdrop-blur/transform ancestors can't hijack its
+            fixed positioning) so it's reachable without scrolling; inline in the card
+            on desktop, unchanged */}
         {isMyTurn ? (
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <div className="relative">
-              <input
-                ref={inputRef}
-                type="text"
-                value={inputWord}
-                onChange={handleInputChange}
-                disabled={submitting}
-                placeholder={
-                  requiredLetter
-                    ? `Enter ${categoryInfo.name.toLowerCase()} starting with "${requiredLetter}"...`
-                    : `Enter any ${categoryInfo.name.toLowerCase()}...`
-                }
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck="false"
-                className="w-full bg-slate-950 border-2 border-indigo-500/70 focus:border-indigo-400 rounded-2xl px-4 py-3.5 text-base sm:text-lg font-medium text-white placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/20 transition shadow-inner"
-              />
-              <button
-                type="submit"
-                disabled={submitting || !inputWord.trim()}
-                className="absolute right-2 top-2 bottom-2 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl font-semibold text-xs sm:text-sm transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-40"
+          isMobile ? (
+            createPortal(
+              <form
+                onSubmit={handleSubmit}
+                className="space-y-3 fixed bottom-0 inset-x-0 z-30 bg-slate-950/95 backdrop-blur-md border-t border-indigo-500/30 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
               >
-                {submitting ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <span>Submit</span>
-                    <Send className="w-3.5 h-3.5" />
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Instant Validation Hint */}
-            {localFeedback && (
-              <div
-                className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${
-                  localFeedback.valid
-                    ? 'text-emerald-300 bg-emerald-950/40 border border-emerald-800/40'
-                    : 'text-rose-300 bg-rose-950/40 border border-rose-800/40'
-                }`}
-              >
-                {localFeedback.valid ? (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                ) : (
-                  <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                )}
-                <span>{localFeedback.message}</span>
-              </div>
-            )}
-          </form>
+                <div className="max-w-lg mx-auto space-y-3">{wordInputContent}</div>
+              </form>,
+              document.body
+            )
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-3">
+              {wordInputContent}
+            </form>
+          )
         ) : (
           <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl text-center space-y-1">
             <div className="text-xs text-slate-400">

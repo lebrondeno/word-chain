@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useGame } from '../context/GameContext';
 import { CATEGORIES } from '../data';
 import { VOTE_REVEAL_CATEGORIES, GAME_TYPES } from '../data/prompts';
 import { Play, Copy, Check, Share2, Crown, Users, AlertCircle, Settings2 } from 'lucide-react';
 import { ShareModal } from './ShareModal';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 export const LobbyView: React.FC = () => {
   const { session, players, localPlayer, startGame, setGameSettings, loading, error } = useGame();
@@ -11,6 +13,7 @@ export const LobbyView: React.FC = () => {
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [updatingSettings, setUpdatingSettings] = useState(false);
+  const isMobile = useIsMobile();
 
   if (!session) return null;
 
@@ -68,8 +71,44 @@ export const LobbyView: React.FC = () => {
     return colors[Math.abs(hash) % colors.length];
   };
 
+  const startAction = isHost ? (
+    <div className="space-y-2">
+      <button
+        onClick={handleStart}
+        disabled={starting || loading || players.length === 0}
+        className="w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-600 hover:from-emerald-400 hover:to-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        {starting ? (
+          <span className="flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            Starting {isVoteReveal ? 'Would You Rather' : 'Word Chain'}...
+          </span>
+        ) : (
+          <>
+            <Play className="w-5 h-5 fill-current" />
+            <span>
+              Start {isVoteReveal ? 'Would You Rather' : 'Word Chain'} ({players.length}{' '}
+              {players.length === 1 ? 'Player' : 'Players'})
+            </span>
+          </>
+        )}
+      </button>
+
+      {players.length === 1 && (
+        <p className="text-center text-[11px] text-slate-400">
+          Tip: Share the room code to play with friends!
+        </p>
+      )}
+    </div>
+  ) : (
+    <div className="p-3.5 bg-slate-950/70 border border-slate-800/80 rounded-2xl flex items-center justify-center gap-2.5 text-slate-300 text-xs">
+      <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-ping" />
+      <span>Waiting for host to start {isVoteReveal ? 'Would You Rather' : 'Word Chain'}...</span>
+    </div>
+  );
+
   return (
-    <div className="w-full max-w-md mx-auto px-4 py-6 animate-fade-in space-y-5">
+    <div className="w-full max-w-md mx-auto px-4 pt-6 pb-28 sm:pb-6 animate-fade-in space-y-5">
       {/* 1. Room Code Card */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 text-center shadow-xl backdrop-blur-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -310,44 +349,17 @@ export const LobbyView: React.FC = () => {
           </div>
         )}
 
-        {/* Start Game or Waiting Action */}
-        <div className="mt-6 pt-4 border-t border-slate-800">
-          {isHost ? (
-            <div className="space-y-2">
-              <button
-                onClick={handleStart}
-                disabled={starting || loading || players.length === 0}
-                className="w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-600 hover:from-emerald-400 hover:to-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {starting ? (
-                  <span className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Starting {isVoteReveal ? 'Would You Rather' : 'Word Chain'}...
-                  </span>
-                ) : (
-                  <>
-                    <Play className="w-5 h-5 fill-current" />
-                    <span>
-                      Start {isVoteReveal ? 'Would You Rather' : 'Word Chain'} ({players.length}{' '}
-                      {players.length === 1 ? 'Player' : 'Players'})
-                    </span>
-                  </>
-                )}
-              </button>
-
-              {players.length === 1 && (
-                <p className="text-center text-[11px] text-slate-400">
-                  Tip: Share the room code to play with friends!
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="p-3.5 bg-slate-950/70 border border-slate-800/80 rounded-2xl flex items-center justify-center gap-2.5 text-slate-300 text-xs">
-              <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-ping" />
-              <span>Waiting for host to start {isVoteReveal ? 'Would You Rather' : 'Word Chain'}...</span>
-            </div>
-          )}
-        </div>
+        {/* Start Game or Waiting Action - pinned within thumb reach at the bottom on
+            mobile (via portal, so backdrop-blur/transform ancestors can't hijack its
+            fixed positioning), inline at the end of the card on desktop (unchanged) */}
+        {isMobile
+          ? createPortal(
+              <div className="fixed bottom-0 inset-x-0 z-30 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <div className="max-w-md mx-auto">{startAction}</div>
+              </div>,
+              document.body
+            )
+          : <div className="mt-6 pt-4 border-t border-slate-800">{startAction}</div>}
       </div>
 
       <ShareModal

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useGame } from '../context/GameContext';
 import { VOTE_REVEAL_CATEGORIES } from '../data/prompts';
+import { useIsMobile } from '../hooks/useIsMobile';
 import {
   Clock,
   CheckCircle2,
@@ -28,6 +30,7 @@ export const VoteRevealGameView: React.FC = () => {
   const [submittingVote, setSubmittingVote] = useState<string | null>(null);
   const [advancingRound, setAdvancingRound] = useState(false);
   const [endingGame, setEndingGame] = useState(false);
+  const isMobile = useIsMobile();
 
   if (!session) return null;
 
@@ -102,8 +105,111 @@ export const VoteRevealGameView: React.FC = () => {
   const isUrgent = timeRemaining <= 6;
   const isCritical = timeRemaining <= 3;
 
+  const voteOptionsContent = (
+    <>
+      {/* Option A Button */}
+      <button
+        type="button"
+        onClick={() => handleVote('A')}
+        disabled={Boolean(submittingVote)}
+        className={`relative w-full p-4 sm:p-5 rounded-2xl border-2 text-left transition-all duration-200 group flex items-start gap-4 ${
+          localVote === 'A'
+            ? 'bg-gradient-to-r from-indigo-950/80 to-blue-950/80 border-indigo-500 shadow-lg shadow-indigo-500/20 ring-2 ring-indigo-500/30'
+            : 'bg-slate-950/70 hover:bg-slate-950 border-slate-800 hover:border-indigo-500/60 text-slate-200'
+        }`}
+      >
+        <div
+          className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 transition ${
+            localVote === 'A'
+              ? 'bg-indigo-600 text-white shadow-md'
+              : 'bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
+          }`}
+        >
+          A
+        </div>
+        <div className="flex-1">
+          <div className="text-base font-bold text-white mb-0.5">{optionA}</div>
+          <div className="text-[11px] text-slate-400">
+            {localVote === 'A' ? 'Your selected choice (Tap to change)' : 'Tap to choose Option A'}
+          </div>
+        </div>
+        {localVote === 'A' && (
+          <CheckCircle2 className="w-6 h-6 text-indigo-400 shrink-0 mt-1 animate-scale-in" />
+        )}
+      </button>
+
+      {/* Option B Button */}
+      <button
+        type="button"
+        onClick={() => handleVote('B')}
+        disabled={Boolean(submittingVote)}
+        className={`relative w-full p-4 sm:p-5 rounded-2xl border-2 text-left transition-all duration-200 group flex items-start gap-4 ${
+          localVote === 'B'
+            ? 'bg-gradient-to-r from-pink-950/80 to-purple-950/80 border-pink-500 shadow-lg shadow-pink-500/20 ring-2 ring-pink-500/30'
+            : 'bg-slate-950/70 hover:bg-slate-950 border-slate-800 hover:border-pink-500/60 text-slate-200'
+        }`}
+      >
+        <div
+          className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 transition ${
+            localVote === 'B'
+              ? 'bg-pink-600 text-white shadow-md'
+              : 'bg-slate-800 text-pink-400 group-hover:bg-pink-600 group-hover:text-white'
+          }`}
+        >
+          B
+        </div>
+        <div className="flex-1">
+          <div className="text-base font-bold text-white mb-0.5">{optionB}</div>
+          <div className="text-[11px] text-slate-400">
+            {localVote === 'B' ? 'Your selected choice (Tap to change)' : 'Tap to choose Option B'}
+          </div>
+        </div>
+        {localVote === 'B' && (
+          <CheckCircle2 className="w-6 h-6 text-pink-400 shrink-0 mt-1 animate-scale-in" />
+        )}
+      </button>
+    </>
+  );
+
+  const hostActionsContent = (
+    <>
+      <button
+        type="button"
+        onClick={handleNextRound}
+        disabled={advancingRound}
+        className="w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        {advancingRound ? (
+          <span className="flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            Loading Next Dilemma...
+          </span>
+        ) : (
+          <>
+            <span>Next Round</span>
+            <ArrowRight className="w-4 h-4" />
+          </>
+        )}
+      </button>
+
+      <button
+        type="button"
+        onClick={handleEndGame}
+        disabled={endingGame}
+        className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-medium transition flex items-center justify-center gap-2"
+      >
+        <RotateCcw className="w-3.5 h-3.5" />
+        <span>Return to Lobby</span>
+      </button>
+    </>
+  );
+
   return (
-    <div className="w-full max-w-lg mx-auto px-4 py-4 space-y-4 animate-fade-in">
+    <div
+      className={`w-full max-w-lg mx-auto px-4 pt-4 space-y-4 animate-fade-in ${
+        !isRevealed || isHost ? 'pb-36 sm:pb-4' : 'pb-4'
+      }`}
+    >
       {/* 1. Header Bar: Engine, Category, Round & Timer Bar */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-lg backdrop-blur-sm">
         <div className="flex items-center justify-between mb-2">
@@ -193,69 +299,18 @@ export const VoteRevealGameView: React.FC = () => {
               Pick your answer below. Votes remain secret until everyone has chosen!
             </p>
 
-            <div className="grid grid-cols-1 gap-3.5">
-              {/* Option A Button */}
-              <button
-                type="button"
-                onClick={() => handleVote('A')}
-                disabled={Boolean(submittingVote)}
-                className={`relative w-full p-5 rounded-2xl border-2 text-left transition-all duration-200 group flex items-start gap-4 ${
-                  localVote === 'A'
-                    ? 'bg-gradient-to-r from-indigo-950/80 to-blue-950/80 border-indigo-500 shadow-lg shadow-indigo-500/20 ring-2 ring-indigo-500/30'
-                    : 'bg-slate-950/70 hover:bg-slate-950 border-slate-800 hover:border-indigo-500/60 text-slate-200'
-                }`}
-              >
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 transition ${
-                    localVote === 'A'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
-                  }`}
-                >
-                  A
-                </div>
-                <div className="flex-1">
-                  <div className="text-base font-bold text-white mb-0.5">{optionA}</div>
-                  <div className="text-[11px] text-slate-400">
-                    {localVote === 'A' ? 'Your selected choice (Tap to change)' : 'Tap to choose Option A'}
-                  </div>
-                </div>
-                {localVote === 'A' && (
-                  <CheckCircle2 className="w-6 h-6 text-indigo-400 shrink-0 mt-1 animate-scale-in" />
-                )}
-              </button>
-
-              {/* Option B Button */}
-              <button
-                type="button"
-                onClick={() => handleVote('B')}
-                disabled={Boolean(submittingVote)}
-                className={`relative w-full p-5 rounded-2xl border-2 text-left transition-all duration-200 group flex items-start gap-4 ${
-                  localVote === 'B'
-                    ? 'bg-gradient-to-r from-pink-950/80 to-purple-950/80 border-pink-500 shadow-lg shadow-pink-500/20 ring-2 ring-pink-500/30'
-                    : 'bg-slate-950/70 hover:bg-slate-950 border-slate-800 hover:border-pink-500/60 text-slate-200'
-                }`}
-              >
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 transition ${
-                    localVote === 'B'
-                      ? 'bg-pink-600 text-white shadow-md'
-                      : 'bg-slate-800 text-pink-400 group-hover:bg-pink-600 group-hover:text-white'
-                  }`}
-                >
-                  B
-                </div>
-                <div className="flex-1">
-                  <div className="text-base font-bold text-white mb-0.5">{optionB}</div>
-                  <div className="text-[11px] text-slate-400">
-                    {localVote === 'B' ? 'Your selected choice (Tap to change)' : 'Tap to choose Option B'}
-                  </div>
-                </div>
-                {localVote === 'B' && (
-                  <CheckCircle2 className="w-6 h-6 text-pink-400 shrink-0 mt-1 animate-scale-in" />
-                )}
-              </button>
-            </div>
+            {/* Vote options - pinned within thumb reach at the bottom on mobile via a
+                portal (so backdrop-blur/transform ancestors can't hijack their fixed
+                positioning) so they're reachable without scrolling; inline in the card
+                on desktop, unchanged */}
+            {isMobile
+              ? createPortal(
+                  <div className="fixed bottom-0 inset-x-0 z-30 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                    <div className="grid grid-cols-1 gap-3 max-w-lg mx-auto">{voteOptionsContent}</div>
+                  </div>,
+                  document.body
+                )
+              : <div className="grid grid-cols-1 gap-3.5">{voteOptionsContent}</div>}
 
             {/* Voting Status Toast */}
             <div className="pt-2 text-center">
@@ -423,38 +478,21 @@ export const VoteRevealGameView: React.FC = () => {
               </div>
             </div>
 
-            {/* Host Actions (Next Round / End Game) */}
+            {/* Host Actions (Next Round / End Game) - pinned within thumb reach at the
+                bottom on mobile via a portal (so backdrop-blur/transform ancestors can't
+                hijack their fixed positioning) so they're reachable without scrolling;
+                inline on desktop, unchanged */}
             {isHost ? (
-              <div className="pt-2 border-t border-slate-800 space-y-2">
-                <button
-                  type="button"
-                  onClick={handleNextRound}
-                  disabled={advancingRound}
-                  className="w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {advancingRound ? (
-                    <span className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Loading Next Dilemma...
-                    </span>
-                  ) : (
-                    <>
-                      <span>Next Round</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleEndGame}
-                  disabled={endingGame}
-                  className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-medium transition flex items-center justify-center gap-2"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Return to Lobby</span>
-                </button>
-              </div>
+              isMobile ? (
+                createPortal(
+                  <div className="fixed bottom-0 inset-x-0 z-30 bg-slate-950/95 backdrop-blur-md border-t border-slate-800 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                    <div className="space-y-2 max-w-lg mx-auto">{hostActionsContent}</div>
+                  </div>,
+                  document.body
+                )
+              ) : (
+                <div className="space-y-2 pt-2 border-t border-slate-800">{hostActionsContent}</div>
+              )
             ) : (
               <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-2xl text-center text-xs text-slate-400 flex items-center justify-center gap-2">
                 <div className="w-2.5 h-2.5 bg-purple-500 rounded-full animate-ping" />

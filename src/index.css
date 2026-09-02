@@ -28,7 +28,17 @@
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  /* No `forwards` fill-mode: with it, the animation's final `transform:
+     translateY(0)` value sticks around forever after the animation ends
+     (fill-mode keeps the last keyframe's computed values applied). A
+     non-`none` `transform` - even a no-op one - creates a new containing
+     block for any `position: fixed` descendant, which silently breaks
+     mobile bottom action bars (they end up positioned relative to this
+     card instead of the viewport). Without `forwards`, the element's
+     computed style reverts to the un-animated cascade once the animation
+     completes - opacity 1 and transform none by default here - so the
+     visual result is identical but no stray transform is left behind. */
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .animate-shake {
