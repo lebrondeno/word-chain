@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { CATEGORIES } from '../data';
-import { VOTE_REVEAL_CATEGORIES, GAME_TYPES } from '../data/prompts';
+import { VOTE_REVEAL_CATEGORIES, TRIVIA_CATEGORIES, GAME_TYPES } from '../data/prompts';
 import { sanitizeRoomCode } from '../lib/roomCode';
 import { Play, UserPlus, Sparkles, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 
@@ -41,6 +41,8 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
     setGameType(typeId);
     if (typeId === 'vote_reveal' || typeId === 'most_likely') {
       setCategory('general');
+    } else if (typeId === 'trivia') {
+      setCategory('general_knowledge');
     } else {
       setCategory('cities');
     }
@@ -70,6 +72,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
 
   const configured = isSupabaseConfigured();
   const isVoteReveal = gameType === 'vote_reveal';
+  const isTrivia = gameType === 'trivia';
 
   return (
     <div className="w-full max-w-md mx-auto px-4 py-8 animate-fade-in">
@@ -184,7 +187,11 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                       <div className="overflow-hidden">
                         <div className="font-semibold text-xs text-white truncate">{type.name}</div>
                         <div className="text-[10px] text-slate-400 truncate">
-                          {type.id === 'word_chain' ? '30s turn timer' : '20s vote & reveal'}
+                          {type.id === 'word_chain'
+                            ? '30s turn timer'
+                            : type.id === 'trivia'
+                            ? '5s per question'
+                            : '20s vote & reveal'}
                         </div>
                       </div>
                     </button>
@@ -198,12 +205,36 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
             {gameType !== 'most_likely' && (
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  {isVoteReveal ? 'Theme' : 'Word Category'}
+                  {isVoteReveal ? 'Theme' : isTrivia ? 'Trivia Category' : 'Word Category'}
                 </label>
 
                 {isVoteReveal ? (
                   <div className="grid grid-cols-2 gap-2">
                     {Object.values(VOTE_REVEAL_CATEGORIES).map((cat) => {
+                      const isSelected = category === cat.id;
+                      return (
+                        <button
+                          type="button"
+                          key={cat.id}
+                          onClick={() => setCategory(cat.id)}
+                          className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                            isSelected
+                              ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
+                              : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span className="text-xl">{cat.icon}</span>
+                          <div className="overflow-hidden">
+                            <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{cat.description}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : isTrivia ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.values(TRIVIA_CATEGORIES).map((cat) => {
                       const isSelected = category === cat.id;
                       return (
                         <button

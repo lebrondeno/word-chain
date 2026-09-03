@@ -7,7 +7,7 @@ export interface PromptData {
 }
 
 export interface GameTypeInfo {
-  id: 'word_chain' | 'vote_reveal' | 'most_likely';
+  id: 'word_chain' | 'vote_reveal' | 'most_likely' | 'trivia';
   name: string;
   shortName: string;
   icon: string;
@@ -51,6 +51,40 @@ export const MOST_LIKELY_CATEGORIES: Record<string, { id: string; name: string; 
   },
 };
 
+// Matches the category slugs scripts/seed-trivia.ts writes into game_prompts
+export const TRIVIA_CATEGORIES: Record<string, { id: string; name: string; icon: string; description: string }> = {
+  general_knowledge: {
+    id: 'general_knowledge',
+    name: 'General Knowledge',
+    icon: '🧠',
+    description: 'A little bit of everything',
+  },
+  sports: {
+    id: 'sports',
+    name: 'Sports',
+    icon: '⚽',
+    description: 'Athletes, teams & sporting moments',
+  },
+  geography: {
+    id: 'geography',
+    name: 'Geography',
+    icon: '🌍',
+    description: 'Countries, capitals & landmarks',
+  },
+  animals: {
+    id: 'animals',
+    name: 'Animals',
+    icon: '🦁',
+    description: 'Wildlife, pets & the animal kingdom',
+  },
+  history: {
+    id: 'history',
+    name: 'History',
+    icon: '📜',
+    description: 'Events, eras & historical figures',
+  },
+};
+
 export const GAME_TYPES: Record<string, GameTypeInfo> = {
   word_chain: {
     id: 'word_chain',
@@ -87,6 +121,20 @@ export const GAME_TYPES: Record<string, GameTypeInfo> = {
     description: 'Vote for the friend who best fits each prompt',
     categories: [
       { id: 'general', name: 'General', icon: '👀', description: "Classic who's-most-likely prompts" },
+    ],
+  },
+  trivia: {
+    id: 'trivia',
+    name: '5-Second Challenge',
+    shortName: 'Trivia',
+    icon: '⚡',
+    description: 'Answer fast - you only get 5 seconds per question',
+    categories: [
+      { id: 'general_knowledge', name: 'General Knowledge', icon: '🧠', description: 'A little bit of everything' },
+      { id: 'sports', name: 'Sports', icon: '⚽', description: 'Athletes, teams & sporting moments' },
+      { id: 'geography', name: 'Geography', icon: '🌍', description: 'Countries, capitals & landmarks' },
+      { id: 'animals', name: 'Animals', icon: '🦁', description: 'Wildlife, pets & the animal kingdom' },
+      { id: 'history', name: 'History', icon: '📜', description: 'Events, eras & historical figures' },
     ],
   },
 };

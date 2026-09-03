@@ -3,6 +3,7 @@ import type {
   GameSession,
   GamePlayer,
   GameVote,
+  GameAnswer,
   LocalPlayerSession,
   SessionStatus,
   VoteRevealPrompt,
@@ -19,6 +20,7 @@ interface GameContextType {
   session: GameSession | null;
   players: GamePlayer[];
   votes: GameVote[];
+  answers: GameAnswer[];
   localPlayer: LocalPlayerSession | null;
   loading: boolean;
   error: string | null;
@@ -29,6 +31,7 @@ interface GameContextType {
   activePlayers: GamePlayer[];
   winnerPlayer: GamePlayer | null;
   localVote: string | null;
+  localAnswer: string | null;
   createGame: (
     displayName: string,
     category?: string,
@@ -41,6 +44,8 @@ interface GameContextType {
   submitVote: (choice: string) => Promise<{ success: boolean; error?: string }>;
   nextVoteRound: () => Promise<{ success: boolean; error?: string }>;
   revealVotes: () => Promise<{ success: boolean; error?: string }>;
+  submitAnswer: (answer: string) => Promise<{ success: boolean; error?: string }>;
+  nextTriviaRound: () => Promise<{ success: boolean; error?: string }>;
   handleTimeout: () => Promise<void>;
   resetGame: () => Promise<{ success: boolean; error?: string }>;
   leaveGame: () => void;
@@ -53,6 +58,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<GameSession | null>(null);
   const [players, setPlayers] = useState<GamePlayer[]>([]);
   const [votes, setVotes] = useState<GameVote[]>([]);
+  const [answers, setAnswers] = useState<GameAnswer[]>([]);
   const [localPlayer, setLocalPlayer] = useState<LocalPlayerSession | null>(() => {
     if (typeof window === 'undefined') return null;
     const saved = localStorage.getItem(STORAGE_SESSION_KEY);
@@ -97,10 +103,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         { data: sessionData, error: sessionErr },
         { data: playersData, error: playersErr },
         { data: votesData, error: votesErr },
+        { data: answersData, error: answersErr },
       ] = await Promise.all([
         supabase.from('game_sessions').select('*').eq('id', sessionId).single(),
         supabase.from('game_players').select('*').eq('session_id', sessionId).order('joined_at', { ascending: true }),
         supabase.from('game_votes').select('*').eq('session_id', sessionId),
+        supabase.from('game_answers').select('*').eq('session_id', sessionId),
       ]);
 
       if (sessionErr || !sessionData) {
@@ -114,6 +122,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       if (votesData && !votesErr) {
         setVotes(votesData as GameVote[]);
+      }
+      if (answersData && !answersErr) {
+        setAnswers(answersData as GameAnswer[]);
       }
       return true;
     } catch (err: unknown) {
@@ -241,9 +252,31 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         )
         .subscribe();
 
+      const answersChannel = supabase
+        .channel(`session_realtime_answers_${sessionId}_${Date.now()}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'game_answers',
+            filter: `session_id=eq.${sessionId}`,
+          },
+          async () => {
+            const { data } = await supabase
+              .from('game_answers')
+              .select('*')
+              .eq('session_id', sessionId);
+            if (data) {
+              setAnswers(data as GameAnswer[]);
+            }
+          }
+        )
+        .subscribe();
+
       realtimeChannelStateRef.current = {
         sessionId,
-        channels: [sessionsChannel, playersChannel, votesChannel],
+        channels: [sessionsChannel, playersChannel, votesChannel, answersChannel],
         refCount: 1,
       };
     }
@@ -278,7 +311,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       currentTurnPlayerId === localPlayer.playerId &&
       session?.status === 'playing' &&
       session?.game_type !== 'vote_reveal' &&
-      session?.game_type !== 'most_likely'
+      session?.game_type !== 'most_likely' &&
+      session?.game_type !== 'trivia'
   );
 
   // Winner calculation for word chain
@@ -291,12 +325,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }
 
-  // Local player's vote in current round
+  // Local player's vote / answer in current round
   const currentRoundNumber = session?.game_config?.round_number || 1;
   const localVote =
     votes.find(
       (v) => v.player_id === localPlayer?.playerId && v.round_number === currentRoundNumber
     )?.choice || null;
+  const localAnswer =
+    answers.find(
+      (a) => a.player_id === localPlayer?.playerId && a.round_number === currentRoundNumber
+    )?.selected_answer || null;
 
   // Sound effects & state change detector
   useEffect(() => {
@@ -321,6 +359,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         soundManager.playReveal();
       }
       prevVotingPhaseRef.current = currentPhase || null;
+    } else if (session.game_type === 'trivia') {
+      // Trivia uses game_config.phase ('answering' | 'revealed') rather than
+      // voting_phase, but reuses the same ref to track the previous value
+      const currentPhase = session.game_config?.phase;
+      if (currentPhase === 'revealed' && prevVotingPhaseRef.current === 'answering') {
+        soundManager.playReveal();
+      }
+      prevVotingPhaseRef.current = currentPhase || null;
     }
 
     prevStatusRef.current = session.status;
@@ -330,9 +376,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Turn / Round Countdown Timer & automatic timeout trigger
   useEffect(() => {
     // vote_reveal and most_likely both run simultaneous voting rounds (20s),
-    // as opposed to word_chain's per-player turn timer (30s)
+    // trivia runs simultaneous answer rounds (5s), as opposed to word_chain's
+    // per-player turn timer (30s)
     const isVoteReveal = session?.game_type === 'vote_reveal' || session?.game_type === 'most_likely';
-    const defaultTimer = isVoteReveal ? 20 : 30;
+    const isTrivia = session?.game_type === 'trivia';
+    const defaultTimer = isTrivia ? 5 : isVoteReveal ? 20 : 30;
 
     if (session?.status !== 'playing' || !session.turn_deadline) {
       setTimeRemaining(defaultTimer);
@@ -374,6 +422,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
             timeoutTriggeredRef.current = timeoutKey;
             handleTimeout();
           }
+        } else if (isTrivia) {
+          const timeoutKey = `trivia_${session.id}_round_${session.game_config?.round_number || 1}`;
+          if (
+            timeoutTriggeredRef.current !== timeoutKey &&
+            session.game_config?.phase === 'answering'
+          ) {
+            timeoutTriggeredRef.current = timeoutKey;
+            handleTimeout();
+          }
         } else if (currentTurnPlayerId) {
           const timeoutKey = `${session.id}_${currentTurnPlayerId}_${session.current_turn_index}`;
           if (timeoutTriggeredRef.current !== timeoutKey) {
@@ -395,6 +452,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     session?.game_type,
     session?.game_config?.round_number,
     session?.game_config?.voting_phase,
+    session?.game_config?.phase,
     currentTurnPlayerId,
     session?.id,
   ]);
@@ -433,18 +491,29 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           prompt_text: selected.prompt_text,
           options: resolvePromptOptions(selected.options as VoteRevealPrompt['options']),
           category: selected.category,
+          correct_answer: selected.correct_answer || undefined,
         };
       }
     } catch (e) {
       console.warn('Could not query game_prompts from DB, using fallback prompts:', e);
     }
 
-    // Local fallback from SEED_PROMPTS
+    // Local fallback from SEED_PROMPTS. Trivia has no bundled fallback content
+    // (it's seeded server-side only via scripts/seed-trivia.ts), so this pool
+    // is empty for that engine - surface a clear error instead of crashing on
+    // an undefined `selected` below.
     const enginePrompts = SEED_PROMPTS.filter((p) => p.engine === engine);
     const catPrompts = enginePrompts.filter((p) => p.category === category);
     const pool = catPrompts.length > 0 ? catPrompts : enginePrompts;
     const unused = pool.filter((p) => !usedIds.includes(p.id));
     const finalPool = unused.length > 0 ? unused : pool;
+    if (finalPool.length === 0) {
+      throw new Error(
+        engine === 'trivia'
+          ? 'No trivia prompts available. Run `npx tsx scripts/seed-trivia.ts` first.'
+          : `No ${engine} prompts available for category "${category}".`
+      );
+    }
     const selected = finalPool[Math.floor(Math.random() * finalPool.length)];
     return {
       id: selected.id,
@@ -514,6 +583,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(sessionData as GameSession);
       setPlayers([playerData as GamePlayer]);
       setVotes([]);
+      setAnswers([]);
 
       return { success: true, roomCode: sessionData.room_code };
     } catch (err: unknown) {
@@ -655,6 +725,33 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const config = {
           round_number: 1,
           voting_phase: 'voting',
+          current_prompt: prompt,
+          used_prompt_ids: [prompt.id],
+        };
+
+        const { data: updatedSession, error: updateErr } = await supabase
+          .from('game_sessions')
+          .update({
+            status: 'playing',
+            turn_order: shuffledIds,
+            current_turn_index: 0,
+            turn_deadline: deadline,
+            game_config: config,
+          })
+          .eq('id', session.id)
+          .select()
+          .single();
+
+        if (updateErr) throw updateErr;
+
+        setSession(updatedSession as GameSession);
+        return { success: true };
+      } else if (session.game_type === 'trivia') {
+        const prompt = await pickRandomPrompt(session.category || 'general_knowledge', [], 'trivia');
+        const deadline = new Date(Date.now() + 5000).toISOString();
+        const config = {
+          round_number: 1,
+          phase: 'answering',
           current_prompt: prompt,
           used_prompt_ids: [prompt.id],
         };
@@ -940,6 +1037,162 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Action: Submit Answer (Trivia / "5-Second Challenge")
+  const submitAnswer = async (answer: string) => {
+    if (!session || !localPlayer) return { success: false, error: 'No active session' };
+    const roundNumber = session.game_config?.round_number || 1;
+    const supabase = getSupabase();
+
+    try {
+      soundManager.playVote();
+
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('submit_answer', {
+        p_session_id: session.id,
+        p_player_id: localPlayer.playerId,
+        p_round_number: roundNumber,
+        p_answer: answer,
+      });
+
+      if (!rpcErr && rpcData) {
+        await fetchSessionState(session.id);
+        return { success: true };
+      }
+
+      // Fallback direct upsert + score adjustment (mirrors the RPC's delta
+      // logic so a changed answer before reveal can't double-count a score)
+      const correctAnswer = session.game_config?.current_prompt?.correct_answer;
+      const isCorrect = Boolean(correctAnswer) && answer === correctAnswer;
+
+      const previousAnswer = answers.find(
+        (a) => a.player_id === localPlayer.playerId && a.round_number === roundNumber
+      );
+      const wasCorrect = previousAnswer?.is_correct || false;
+
+      const { error: upsertErr } = await supabase.from('game_answers').upsert(
+        {
+          session_id: session.id,
+          player_id: localPlayer.playerId,
+          round_number: roundNumber,
+          selected_answer: answer,
+          is_correct: isCorrect,
+          answered_at: new Date().toISOString(),
+        },
+        { onConflict: 'session_id,player_id,round_number' }
+      );
+
+      if (upsertErr) throw upsertErr;
+
+      if (isCorrect !== wasCorrect) {
+        const currentPlayer = players.find((p) => p.id === localPlayer.playerId);
+        const currentScore = currentPlayer?.score || 0;
+        const nextScore = isCorrect ? currentScore + 1 : Math.max(currentScore - 1, 0);
+        await supabase.from('game_players').update({ score: nextScore }).eq('id', localPlayer.playerId);
+      }
+
+      // Check if all players answered
+      const { data: roundAnswers } = await supabase
+        .from('game_answers')
+        .select('*')
+        .eq('session_id', session.id)
+        .eq('round_number', roundNumber);
+
+      const activePlayersCount = players.filter((p) => !p.is_eliminated).length;
+
+      if (roundAnswers && roundAnswers.length >= activePlayersCount && activePlayersCount > 0) {
+        const updatedConfig = {
+          ...(session.game_config || {}),
+          phase: 'revealed',
+        };
+        await supabase
+          .from('game_sessions')
+          .update({ game_config: updatedConfig })
+          .eq('id', session.id);
+      }
+
+      await fetchSessionState(session.id);
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to submit answer';
+      setError(message);
+      return { success: false, error: message };
+    }
+  };
+
+  // Action: Next Trivia Round (Trivia / "5-Second Challenge")
+  const nextTriviaRound = async () => {
+    if (!session || !localPlayer?.isHost) return { success: false, error: 'Host only' };
+    setError(null);
+    const supabase = getSupabase();
+
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('next_trivia_round', {
+        p_session_id: session.id,
+      });
+
+      if (!rpcErr && rpcData) {
+        await fetchSessionState(session.id);
+        return { success: true };
+      }
+
+      // Fallback direct mutation
+      const nextRound = (session.game_config?.round_number || 1) + 1;
+      const usedIds = (session.game_config?.used_prompt_ids as string[]) || [];
+      const nextPrompt = await pickRandomPrompt(session.category || 'general_knowledge', usedIds, 'trivia');
+      const deadline = new Date(Date.now() + 5000).toISOString();
+
+      const newConfig = {
+        round_number: nextRound,
+        phase: 'answering',
+        current_prompt: nextPrompt,
+        used_prompt_ids: [...usedIds, nextPrompt.id],
+      };
+
+      const { data: updated, error: updateErr } = await supabase
+        .from('game_sessions')
+        .update({
+          turn_deadline: deadline,
+          game_config: newConfig,
+        })
+        .eq('id', session.id)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+
+      setSession(updated as GameSession);
+      await fetchSessionState(session.id);
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to advance round';
+      setError(message);
+      return { success: false, error: message };
+    }
+  };
+
+  // Action: Reveal Trivia Round (Manual or Timeout Trigger)
+  const revealTriviaRound = async () => {
+    if (!session) return { success: false, error: 'No active session' };
+    const supabase = getSupabase();
+
+    try {
+      const updatedConfig = {
+        ...(session.game_config || {}),
+        phase: 'revealed',
+      };
+
+      await supabase
+        .from('game_sessions')
+        .update({ game_config: updatedConfig })
+        .eq('id', session.id);
+
+      await fetchSessionState(session.id);
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to reveal trivia round';
+      return { success: false, error: message };
+    }
+  };
+
   // Action: Handle Timeout
   const handleTimeout = async () => {
     if (!session || session.status !== 'playing') return;
@@ -949,6 +1202,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (session.game_type === 'vote_reveal' || session.game_type === 'most_likely') {
         // Vote & Reveal / Most Likely timeout: reveal the results
         await revealVotes();
+        return;
+      }
+
+      if (session.game_type === 'trivia') {
+        // Trivia timeout: reveal the round - no answer just means 0 points
+        await revealTriviaRound();
         return;
       }
 
@@ -1041,8 +1300,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Direct fallback
       await supabase
         .from('game_players')
-        .update({ is_eliminated: false })
+        .update({ is_eliminated: false, score: 0 })
         .eq('session_id', session.id);
+
+      await supabase.from('game_answers').delete().eq('session_id', session.id);
 
       const { data: resetSession, error: resetErr } = await supabase
         .from('game_sessions')
@@ -1076,6 +1337,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSession(null);
     setPlayers([]);
     setVotes([]);
+    setAnswers([]);
     setError(null);
   };
 
@@ -1091,6 +1353,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session,
         players,
         votes,
+        answers,
         localPlayer,
         loading,
         error,
@@ -1101,6 +1364,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activePlayers,
         winnerPlayer,
         localVote,
+        localAnswer,
         createGame,
         joinGame,
         setGameSettings,
@@ -1109,6 +1373,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         submitVote,
         nextVoteRound,
         revealVotes,
+        submitAnswer,
+        nextTriviaRound,
         handleTimeout,
         resetGame,
         leaveGame,

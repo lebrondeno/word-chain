@@ -1,6 +1,6 @@
 export type SessionStatus = 'lobby' | 'playing' | 'finished';
 
-export type GameType = 'word_chain' | 'vote_reveal' | 'most_likely';
+export type GameType = 'word_chain' | 'vote_reveal' | 'most_likely' | 'trivia';
 
 export interface UsedWordItem {
   word: string;
@@ -21,13 +21,19 @@ export interface VoteRevealPrompt {
   prompt_text: string;
   options: [string, string] | string[] | PlayerOption[] | null;
   category?: string;
+  // 'trivia' engine only: which options[] entry is correct. Present in
+  // game_config for all clients (not just the host) since this app has no
+  // per-player server-authoritative view - see TriviaGameView for the
+  // fairness trade-off this implies.
+  correct_answer?: string;
 }
 
 export interface GameConfig {
   round_number?: number;
   current_prompt?: VoteRevealPrompt | null;
   used_prompt_ids?: string[];
-  voting_phase?: 'voting' | 'revealed';
+  voting_phase?: 'voting' | 'revealed'; // vote_reveal & most_likely
+  phase?: 'answering' | 'revealed'; // trivia
   [key: string]: unknown;
 }
 
@@ -51,6 +57,7 @@ export interface GamePlayer {
   session_id: string;
   display_name: string;
   is_eliminated: boolean;
+  score: number;
   joined_at: string;
 }
 
@@ -60,6 +67,7 @@ export interface GamePrompt {
   category: string;
   prompt_text: string;
   options: [string, string] | string[] | null;
+  correct_answer?: string | null;
   created_at?: string;
 }
 
@@ -70,6 +78,16 @@ export interface GameVote {
   round_number: number;
   choice: string;
   created_at: string;
+}
+
+export interface GameAnswer {
+  id: string;
+  session_id: string;
+  player_id: string;
+  round_number: number;
+  selected_answer: string;
+  is_correct: boolean;
+  answered_at: string;
 }
 
 export interface LocalPlayerSession {

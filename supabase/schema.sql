@@ -28,8 +28,13 @@ CREATE TABLE IF NOT EXISTS game_players (
   session_id uuid REFERENCES game_sessions(id) ON DELETE CASCADE,
   display_name text NOT NULL,
   is_eliminated boolean DEFAULT false,
+  score int NOT NULL DEFAULT 0,
   joined_at timestamptz DEFAULT now()
 );
+
+-- If score column doesn't exist yet on existing table, add it (used by the
+-- 'trivia' engine / "5-Second Challenge" game type)
+ALTER TABLE game_players ADD COLUMN IF NOT EXISTS score int NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS game_prompts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -60,11 +65,24 @@ CREATE TABLE IF NOT EXISTS game_votes (
   UNIQUE(session_id, player_id, round_number)
 );
 
+-- Per-round answers for the 'trivia' engine / "5-Second Challenge" game type
+CREATE TABLE IF NOT EXISTS game_answers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid REFERENCES game_sessions(id) ON DELETE CASCADE,
+  player_id uuid REFERENCES game_players(id) ON DELETE CASCADE,
+  round_number int NOT NULL DEFAULT 1,
+  selected_answer text NOT NULL,
+  is_correct boolean NOT NULL,
+  answered_at timestamptz DEFAULT now(),
+  UNIQUE(session_id, player_id, round_number)
+);
+
 -- 2. Indexes for high performance lookups
 CREATE INDEX IF NOT EXISTS idx_game_sessions_room_code ON game_sessions(room_code);
 CREATE INDEX IF NOT EXISTS idx_game_players_session_id ON game_players(session_id);
 CREATE INDEX IF NOT EXISTS idx_game_prompts_engine_cat ON game_prompts(engine, category);
 CREATE INDEX IF NOT EXISTS idx_game_votes_session_round ON game_votes(session_id, round_number);
+CREATE INDEX IF NOT EXISTS idx_game_answers_session_round ON game_answers(session_id, round_number);
 
 -- 3. Enable Realtime Replication
 -- ALTER PUBLICATION ... ADD TABLE errors if the table is already a member, so
@@ -100,11 +118,22 @@ BEGIN
   END IF;
 END $$;
 
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'game_answers'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE game_answers;
+  END IF;
+END $$;
+
 -- 4. Enable Row Level Security (RLS)
 ALTER TABLE game_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE game_players ENABLE ROW LEVEL SECURITY;
 ALTER TABLE game_prompts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE game_votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE game_answers ENABLE ROW LEVEL SECURITY;
 
 -- Allow public anonymous access (No Auth requirement: players join via room code)
 DROP POLICY IF EXISTS "Public sessions access" ON game_sessions;
@@ -130,6 +159,13 @@ CREATE POLICY "Public prompts access" ON game_prompts
 
 DROP POLICY IF EXISTS "Public votes access" ON game_votes;
 CREATE POLICY "Public votes access" ON game_votes
+  FOR ALL
+  TO anon, authenticated
+  USING (true)
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public answers access" ON game_answers;
+CREATE POLICY "Public answers access" ON game_answers
   FOR ALL
   TO anon, authenticated
   USING (true)
@@ -263,6 +299,56 @@ BEGIN
         'id', v_prompt.id,
         'prompt_text', v_prompt.prompt_text,
         'options', v_options,
+        'category', v_prompt.category
+      ),
+      'used_prompt_ids', jsonb_build_array(v_prompt.id)
+    );
+
+    UPDATE game_sessions
+    SET status = 'playing',
+        turn_order = v_player_ids,
+        current_turn_index = 0,
+        turn_deadline = v_deadline,
+        game_config = v_new_config
+    WHERE id = p_session_id;
+
+    RETURN jsonb_build_object(
+      'success', true,
+      'status', 'playing',
+      'turn_deadline', v_deadline,
+      'game_config', v_new_config
+    );
+  ELSIF v_session.game_type = 'trivia' THEN
+    -- "5-Second Challenge": pick a random trivia prompt matching category
+    SELECT * INTO v_prompt
+    FROM game_prompts
+    WHERE engine = 'trivia' AND category = v_session.category
+    ORDER BY random()
+    LIMIT 1;
+
+    -- Fallback to any trivia prompt if category is empty
+    IF v_prompt.id IS NULL THEN
+      SELECT * INTO v_prompt
+      FROM game_prompts
+      WHERE engine = 'trivia'
+      ORDER BY random()
+      LIMIT 1;
+    END IF;
+
+    IF v_prompt.id IS NULL THEN
+      RAISE EXCEPTION 'No trivia prompts available - run scripts/seed-trivia.ts first';
+    END IF;
+
+    v_deadline := now() + interval '5 seconds';
+
+    v_new_config := jsonb_build_object(
+      'round_number', 1,
+      'phase', 'answering',
+      'current_prompt', jsonb_build_object(
+        'id', v_prompt.id,
+        'prompt_text', v_prompt.prompt_text,
+        'options', v_prompt.options,
+        'correct_answer', v_prompt.correct_answer,
         'category', v_prompt.category
       ),
       'used_prompt_ids', jsonb_build_array(v_prompt.id)
@@ -540,6 +626,110 @@ END;
 $$;
 
 
+-- Function: Submit Answer (Trivia / "5-Second Challenge" Engine)
+CREATE OR REPLACE FUNCTION submit_answer(
+  p_session_id uuid,
+  p_player_id uuid,
+  p_round_number int,
+  p_answer text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_session game_sessions%ROWTYPE;
+  v_correct_answer text;
+  v_is_correct boolean;
+  v_prev_is_correct boolean;
+  v_total_active int;
+  v_total_answers int;
+  v_config jsonb;
+BEGIN
+  -- Lock session
+  SELECT * INTO v_session
+  FROM game_sessions
+  WHERE id = p_session_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Session not found';
+  END IF;
+
+  IF v_session.status <> 'playing' THEN
+    RAISE EXCEPTION 'Game is not currently active';
+  END IF;
+
+  v_correct_answer := v_session.game_config #>> '{current_prompt,correct_answer}';
+  v_is_correct := (v_correct_answer IS NOT NULL AND p_answer = v_correct_answer);
+
+  -- Look up any previous answer for this round so a changed answer (upsert)
+  -- adjusts score by the delta instead of double-counting. FOUND is set by
+  -- this SELECT INTO (true/false, never null) - a plain "SELECT ... INTO x"
+  -- would leave x as NULL (not false) when no row matches, which would make
+  -- every later "NOT v_prev_is_correct" check below silently short-circuit
+  -- to NULL instead of true.
+  SELECT is_correct INTO v_prev_is_correct
+  FROM game_answers
+  WHERE session_id = p_session_id AND player_id = p_player_id AND round_number = p_round_number;
+
+  IF NOT FOUND THEN
+    v_prev_is_correct := false;
+  END IF;
+
+  -- Upsert answer
+  INSERT INTO game_answers (session_id, player_id, round_number, selected_answer, is_correct, answered_at)
+  VALUES (p_session_id, p_player_id, p_round_number, p_answer, v_is_correct, now())
+  ON CONFLICT (session_id, player_id, round_number)
+  DO UPDATE SET selected_answer = EXCLUDED.selected_answer, is_correct = EXCLUDED.is_correct, answered_at = now();
+
+  -- Adjust score by the correctness delta (handles a changed answer cleanly;
+  -- under normal play the frontend locks the choice after the first submit)
+  IF v_is_correct AND NOT v_prev_is_correct THEN
+    UPDATE game_players SET score = score + 1 WHERE id = p_player_id;
+  ELSIF v_prev_is_correct AND NOT v_is_correct THEN
+    UPDATE game_players SET score = GREATEST(score - 1, 0) WHERE id = p_player_id;
+  END IF;
+
+  -- Check if all active non-eliminated players have answered
+  SELECT count(*) INTO v_total_active
+  FROM game_players
+  WHERE session_id = p_session_id AND is_eliminated = false;
+
+  SELECT count(*) INTO v_total_answers
+  FROM game_answers
+  WHERE session_id = p_session_id AND round_number = p_round_number;
+
+  v_config := v_session.game_config;
+
+  -- If all players have answered, trigger reveal
+  IF v_total_answers >= v_total_active AND v_total_active > 0 THEN
+    v_config := jsonb_set(v_config, '{phase}', '"revealed"'::jsonb);
+
+    UPDATE game_sessions
+    SET game_config = v_config
+    WHERE id = p_session_id;
+
+    RETURN jsonb_build_object(
+      'success', true,
+      'is_correct', v_is_correct,
+      'revealed', true,
+      'total_answers', v_total_answers,
+      'total_players', v_total_active
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'is_correct', v_is_correct,
+    'revealed', false,
+    'total_answers', v_total_answers,
+    'total_players', v_total_active
+  );
+END;
+$$;
+
+
 -- Function: Next Vote Round (Vote & Reveal: Fetch next unused prompt and reset timer)
 CREATE OR REPLACE FUNCTION next_vote_round(
   p_session_id uuid
@@ -639,6 +829,98 @@ END;
 $$;
 
 
+-- Function: Next Trivia Round (Trivia / "5-Second Challenge": fetch next unused prompt and reset timer)
+CREATE OR REPLACE FUNCTION next_trivia_round(
+  p_session_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_session game_sessions%ROWTYPE;
+  v_prompt game_prompts%ROWTYPE;
+  v_used_ids jsonb;
+  v_round int;
+  v_new_config jsonb;
+  v_deadline timestamptz;
+BEGIN
+  -- Lock session
+  SELECT * INTO v_session
+  FROM game_sessions
+  WHERE id = p_session_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Session not found';
+  END IF;
+
+  v_round := COALESCE((v_session.game_config ->> 'round_number')::int, 1) + 1;
+  v_used_ids := COALESCE(v_session.game_config -> 'used_prompt_ids', '[]'::jsonb);
+
+  -- Pick unused trivia prompt from category
+  SELECT * INTO v_prompt
+  FROM game_prompts
+  WHERE engine = 'trivia'
+    AND category = v_session.category
+    AND NOT (v_used_ids @> to_jsonb(id::text))
+  ORDER BY random()
+  LIMIT 1;
+
+  -- If all prompts in category were used, cycle and allow any from category
+  IF v_prompt.id IS NULL THEN
+    SELECT * INTO v_prompt
+    FROM game_prompts
+    WHERE engine = 'trivia' AND category = v_session.category
+    ORDER BY random()
+    LIMIT 1;
+  END IF;
+
+  -- Fallback to any trivia prompt
+  IF v_prompt.id IS NULL THEN
+    SELECT * INTO v_prompt
+    FROM game_prompts
+    WHERE engine = 'trivia'
+    ORDER BY random()
+    LIMIT 1;
+  END IF;
+
+  IF v_prompt.id IS NULL THEN
+    RAISE EXCEPTION 'No trivia prompts available - run scripts/seed-trivia.ts first';
+  END IF;
+
+  v_deadline := now() + interval '5 seconds';
+  v_used_ids := v_used_ids || to_jsonb(v_prompt.id::text);
+
+  v_new_config := jsonb_build_object(
+    'round_number', v_round,
+    'phase', 'answering',
+    'current_prompt', jsonb_build_object(
+      'id', v_prompt.id,
+      'prompt_text', v_prompt.prompt_text,
+      'options', v_prompt.options,
+      'correct_answer', v_prompt.correct_answer,
+      'category', v_prompt.category
+    ),
+    'used_prompt_ids', v_used_ids
+  );
+
+  UPDATE game_sessions
+  SET status = 'playing',
+      turn_deadline = v_deadline,
+      game_config = v_new_config
+  WHERE id = p_session_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'round_number', v_round,
+    'turn_deadline', v_deadline,
+    'game_config', v_new_config
+  );
+END;
+$$;
+
+
 -- Function: Handle Turn Timeout
 CREATE OR REPLACE FUNCTION handle_timeout(
   p_session_id uuid,
@@ -681,6 +963,17 @@ BEGIN
     WHERE id = p_session_id;
 
     RETURN jsonb_build_object('success', true, 'voting_phase', 'revealed');
+  END IF;
+
+  -- For trivia, timeout marks phase as 'revealed' too - no answer just means
+  -- 0 points for that round, nobody is eliminated
+  IF v_session.game_type = 'trivia' THEN
+    v_config := jsonb_set(v_session.game_config, '{phase}', '"revealed"'::jsonb);
+    UPDATE game_sessions
+    SET game_config = v_config
+    WHERE id = p_session_id;
+
+    RETURN jsonb_build_object('success', true, 'phase', 'revealed');
   END IF;
 
   -- Word chain timeout handling (30s)
@@ -771,10 +1064,18 @@ BEGIN
       game_config = '{}'::jsonb
   WHERE id = p_session_id;
 
-  -- Reset players
+  -- Reset players (score is only ever incremented by submit_answer, so
+  -- zeroing it here is a no-op for word_chain/vote_reveal/most_likely
+  -- sessions - it's always already 0 for them)
   UPDATE game_players
-  SET is_eliminated = false
+  SET is_eliminated = false,
+      score = 0
   WHERE session_id = p_session_id;
+
+  -- Clear prior-round trivia answers so a replayed game (same session_id,
+  -- round numbers starting back at 1) doesn't inherit stale "already
+  -- answered" rows from the previous playthrough
+  DELETE FROM game_answers WHERE session_id = p_session_id;
 
   RETURN jsonb_build_object('success', true, 'status', 'lobby');
 END;

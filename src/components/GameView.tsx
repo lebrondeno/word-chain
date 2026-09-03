@@ -5,6 +5,7 @@ import { CATEGORIES, validateWordSubmission } from '../data';
 import { WordHistoryDrawer } from './WordHistoryDrawer';
 import { VoteRevealGameView } from './VoteRevealGameView';
 import { MostLikelyGameView } from './MostLikelyGameView';
+import { TriviaGameView } from './TriviaGameView';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
   Clock,
@@ -55,6 +56,11 @@ export const GameView: React.FC = () => {
   // Delegate to MostLikelyGameView for most_likely game engine
   if (session.game_type === 'most_likely') {
     return <MostLikelyGameView />;
+  }
+
+  // Delegate to TriviaGameView for trivia ("5-Second Challenge") game engine
+  if (session.game_type === 'trivia') {
+    return <TriviaGameView />;
   }
 
   const categoryInfo = CATEGORIES[session.category] || CATEGORIES['cities'];
