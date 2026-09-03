@@ -58,7 +58,7 @@ export const GameView: React.FC = () => {
     return <MostLikelyGameView />;
   }
 
-  // Delegate to TriviaGameView for trivia ("5-Second Challenge") game engine
+  // Delegate to TriviaGameView for trivia ("20-Second Challenge") game engine
   if (session.game_type === 'trivia') {
     return <TriviaGameView />;
   }

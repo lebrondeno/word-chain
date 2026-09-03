@@ -202,7 +202,7 @@ export const LobbyView: React.FC = () => {
                         : type.id === 'most_likely'
                         ? 'Vote for the player who fits'
                         : type.id === 'trivia'
-                        ? '5s per question, race the clock'
+                        ? '20s per question, race the clock'
                         : 'Group vote & reveal'}
                     </span>
                   </button>
@@ -323,7 +323,7 @@ export const LobbyView: React.FC = () => {
                 : isMostLikely
                 ? 'Vote for the player who best fits each prompt within 20s.'
                 : isTrivia
-                ? 'Answer fast! You get 5 seconds per question - most correct answers wins.'
+                ? 'Answer fast! You get 20 seconds per question - most correct answers wins.'
                 : 'Take turns linking words by last letter before the 30s timer runs out.'}
             </p>
           </div>

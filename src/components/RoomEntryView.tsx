@@ -190,7 +190,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                           {type.id === 'word_chain'
                             ? '30s turn timer'
                             : type.id === 'trivia'
-                            ? '5s per question'
+                            ? '20s per question'
                             : '20s vote & reveal'}
                         </div>
                       </div>

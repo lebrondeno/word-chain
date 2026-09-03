@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS game_players (
 );
 
 -- If score column doesn't exist yet on existing table, add it (used by the
--- 'trivia' engine / "5-Second Challenge" game type)
+-- 'trivia' engine / "20-Second Challenge" game type)
 ALTER TABLE game_players ADD COLUMN IF NOT EXISTS score int NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS game_prompts (
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS game_votes (
   UNIQUE(session_id, player_id, round_number)
 );
 
--- Per-round answers for the 'trivia' engine / "5-Second Challenge" game type
+-- Per-round answers for the 'trivia' engine / "20-Second Challenge" game type
 CREATE TABLE IF NOT EXISTS game_answers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id uuid REFERENCES game_sessions(id) ON DELETE CASCADE,
@@ -319,7 +319,7 @@ BEGIN
       'game_config', v_new_config
     );
   ELSIF v_session.game_type = 'trivia' THEN
-    -- "5-Second Challenge": pick a random trivia prompt matching category
+    -- "20-Second Challenge": pick a random trivia prompt matching category
     SELECT * INTO v_prompt
     FROM game_prompts
     WHERE engine = 'trivia' AND category = v_session.category
@@ -339,7 +339,7 @@ BEGIN
       RAISE EXCEPTION 'No trivia prompts available - run scripts/seed-trivia.ts first';
     END IF;
 
-    v_deadline := now() + interval '5 seconds';
+    v_deadline := now() + interval '20 seconds';
 
     v_new_config := jsonb_build_object(
       'round_number', 1,
@@ -626,7 +626,7 @@ END;
 $$;
 
 
--- Function: Submit Answer (Trivia / "5-Second Challenge" Engine)
+-- Function: Submit Answer (Trivia / "20-Second Challenge" Engine)
 CREATE OR REPLACE FUNCTION submit_answer(
   p_session_id uuid,
   p_player_id uuid,
@@ -829,7 +829,7 @@ END;
 $$;
 
 
--- Function: Next Trivia Round (Trivia / "5-Second Challenge": fetch next unused prompt and reset timer)
+-- Function: Next Trivia Round (Trivia / "20-Second Challenge": fetch next unused prompt and reset timer)
 CREATE OR REPLACE FUNCTION next_trivia_round(
   p_session_id uuid
 )
@@ -889,7 +889,7 @@ BEGIN
     RAISE EXCEPTION 'No trivia prompts available - run scripts/seed-trivia.ts first';
   END IF;
 
-  v_deadline := now() + interval '5 seconds';
+  v_deadline := now() + interval '20 seconds';
   v_used_ids := v_used_ids || to_jsonb(v_prompt.id::text);
 
   v_new_config := jsonb_build_object(

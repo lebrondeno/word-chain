@@ -125,10 +125,10 @@ export const GAME_TYPES: Record<string, GameTypeInfo> = {
   },
   trivia: {
     id: 'trivia',
-    name: '5-Second Challenge',
+    name: '20-Second Challenge',
     shortName: 'Trivia',
     icon: '⚡',
-    description: 'Answer fast - you only get 5 seconds per question',
+    description: 'Answer fast - you only get 20 seconds per question',
     categories: [
       { id: 'general_knowledge', name: 'General Knowledge', icon: '🧠', description: 'A little bit of everything' },
       { id: 'sports', name: 'Sports', icon: '⚽', description: 'Athletes, teams & sporting moments' },

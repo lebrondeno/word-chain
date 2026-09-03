@@ -107,10 +107,10 @@ export const TriviaGameView: React.FC = () => {
     setEndingGame(false);
   };
 
-  // Timer percentage (5s max)
-  const timerPercent = Math.min(100, Math.max(0, (timeRemaining / 5) * 100));
-  const isUrgent = timeRemaining <= 3;
-  const isCritical = timeRemaining <= 1;
+  // Timer percentage (20s max): green 20s-10s, amber 10s-5s, red under 5s
+  const timerPercent = Math.min(100, Math.max(0, (timeRemaining / 20) * 100));
+  const isUrgent = timeRemaining <= 10;
+  const isCritical = timeRemaining < 5;
 
   const isLocked = Boolean(localAnswer) || Boolean(submittingAnswer);
 
@@ -209,7 +209,7 @@ export const TriviaGameView: React.FC = () => {
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-xs text-white uppercase tracking-wider">
-                  5-Second Challenge
+                  20-Second Challenge
                 </span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
                   {categoryInfo.name}
@@ -337,7 +337,7 @@ export const TriviaGameView: React.FC = () => {
         {!isRevealed ? (
           <div className="space-y-4">
             <p className="text-center text-xs text-slate-400">
-              Tap fast! You've got 5 seconds and one shot per question.
+              Tap fast! You've got 20 seconds and one shot per question.
             </p>
 
             {/* Answer options - 2x2 grid on both mobile & desktop; pinned within

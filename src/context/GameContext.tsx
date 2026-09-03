@@ -79,6 +79,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const prevStatusRef = useRef<SessionStatus | null>(null);
   const prevVotingPhaseRef = useRef<string | null>(null);
   const timeoutTriggeredRef = useRef<string | null>(null);
+  // Set synchronously (before any network round trip) the instant the local
+  // player votes/answers, so the countdown tick sound can stop immediately
+  // rather than waiting for the vote/answer to round-trip through the DB and
+  // land back in `votes`/`answers` state. Reset whenever a fresh round's
+  // deadline is issued (see the effect below).
+  const hasActedThisRoundRef = useRef<boolean>(false);
   const realtimeChannelStateRef = useRef<{
     sessionId: string;
     channels: ReturnType<ReturnType<typeof getSupabase>['channel']>[];
@@ -373,14 +379,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     prevTurnIndexRef.current = session.current_turn_index;
   }, [session, isMyTurn]);
 
+  // A fresh turn_deadline means a new turn/round has begun (start_game,
+  // next_vote_round/next_trivia_round, and each word_chain turn all issue a
+  // brand new deadline) - re-arm the "already acted" gate below for it. Kept
+  // as its own effect so it fires precisely on a new deadline, not on every
+  // other change (e.g. voting_phase/phase flipping to 'revealed') that the
+  // timer effect below also depends on.
+  useEffect(() => {
+    hasActedThisRoundRef.current = false;
+  }, [session?.turn_deadline]);
+
   // Turn / Round Countdown Timer & automatic timeout trigger
   useEffect(() => {
-    // vote_reveal and most_likely both run simultaneous voting rounds (20s),
-    // trivia runs simultaneous answer rounds (5s), as opposed to word_chain's
-    // per-player turn timer (30s)
+    // vote_reveal, most_likely, and trivia all run simultaneous rounds (20s),
+    // as opposed to word_chain's per-player turn timer (30s)
     const isVoteReveal = session?.game_type === 'vote_reveal' || session?.game_type === 'most_likely';
     const isTrivia = session?.game_type === 'trivia';
-    const defaultTimer = isTrivia ? 5 : isVoteReveal ? 20 : 30;
+    const defaultTimer = isTrivia || isVoteReveal ? 20 : 30;
 
     if (session?.status !== 'playing' || !session.turn_deadline) {
       setTimeRemaining(defaultTimer);
@@ -405,10 +420,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setTimeRemaining(diffSec);
 
-      if (diffSec <= 3 && diffSec > 0) {
-        soundManager.playTick(true);
-      } else if (diffSec <= 6 && diffSec > 3) {
-        soundManager.playTick(false);
+      // Keep the visible countdown running for everyone regardless (above),
+      // but silence the tick sound once this player has locked in a choice
+      // for the round, or the round has already been revealed - otherwise it
+      // keeps ticking toward a deadline that's no longer relevant to them.
+      const roundAlreadyRevealed =
+        (isVoteReveal && session.game_config?.voting_phase === 'revealed') ||
+        (isTrivia && session.game_config?.phase === 'revealed');
+      const shouldSilenceTick = hasActedThisRoundRef.current || roundAlreadyRevealed;
+
+      if (!shouldSilenceTick) {
+        if (diffSec <= 3 && diffSec > 0) {
+          soundManager.playTick(true);
+        } else if (diffSec <= 6 && diffSec > 3) {
+          soundManager.playTick(false);
+        }
       }
 
       // Check timeout
@@ -748,7 +774,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true };
       } else if (session.game_type === 'trivia') {
         const prompt = await pickRandomPrompt(session.category || 'general_knowledge', [], 'trivia');
-        const deadline = new Date(Date.now() + 5000).toISOString();
+        const deadline = new Date(Date.now() + 20000).toISOString();
         const config = {
           round_number: 1,
           phase: 'answering',
@@ -901,6 +927,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Action: Submit Vote (Vote & Reveal)
   const submitVote = async (choice: string) => {
     if (!session || !localPlayer) return { success: false, error: 'No active session' };
+    // Silence the countdown tick immediately, before the RPC round-trip
+    hasActedThisRoundRef.current = true;
     const roundNumber = session.game_config?.round_number || 1;
     const supabase = getSupabase();
 
@@ -1037,9 +1065,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Action: Submit Answer (Trivia / "5-Second Challenge")
+  // Action: Submit Answer (Trivia / "20-Second Challenge")
   const submitAnswer = async (answer: string) => {
     if (!session || !localPlayer) return { success: false, error: 'No active session' };
+    // Silence the countdown tick immediately, before the RPC round-trip
+    hasActedThisRoundRef.current = true;
     const roundNumber = session.game_config?.round_number || 1;
     const supabase = getSupabase();
 
@@ -1118,7 +1148,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Action: Next Trivia Round (Trivia / "5-Second Challenge")
+  // Action: Next Trivia Round (Trivia / "20-Second Challenge")
   const nextTriviaRound = async () => {
     if (!session || !localPlayer?.isHost) return { success: false, error: 'Host only' };
     setError(null);
@@ -1138,7 +1168,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const nextRound = (session.game_config?.round_number || 1) + 1;
       const usedIds = (session.game_config?.used_prompt_ids as string[]) || [];
       const nextPrompt = await pickRandomPrompt(session.category || 'general_knowledge', usedIds, 'trivia');
-      const deadline = new Date(Date.now() + 5000).toISOString();
+      const deadline = new Date(Date.now() + 20000).toISOString();
 
       const newConfig = {
         round_number: nextRound,
