@@ -105,3 +105,21 @@ Deploying to Vercel is one click:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
 4. Deploy! The included `vercel.json` ensures direct join routes like `/join/:roomCode` resolve properly.
+
+---
+
+## 📥 Content Management
+
+### Trivia Question Seeding
+
+[`scripts/seed-trivia.ts`](./scripts/seed-trivia.ts) is a standalone, manually-run utility that pulls multiple-choice questions from the free [Open Trivia DB](https://opentdb.com) API and inserts them into `game_prompts` under `engine = 'trivia'` (General Knowledge, Sports, Geography, Animals, and History). It's not part of the app itself — it's a content-management tool for keeping the trivia/fastest-finger prompt pool stocked.
+
+Run it periodically (e.g. every few weeks) or whenever the trivia category starts repeating itself for players:
+
+```bash
+npx tsx scripts/seed-trivia.ts
+```
+
+It's safe to re-run — questions are deduped on their exact text, so repeat runs only add newly-fetched material instead of inserting duplicates.
+
+**Setup**: add `SUPABASE_SERVICE_ROLE_KEY` to your `.env` (from Supabase Dashboard > Project Settings > API > "service_role" secret key — **not** the anon key). The script needs it to bypass RLS and write content, so it must only ever be run locally; never commit this key or reference it from client-side code. Make sure you've also run the latest `supabase/schema.sql`, which adds the `correct_answer` column and unique index the script depends on.

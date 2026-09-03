@@ -33,12 +33,22 @@ CREATE TABLE IF NOT EXISTS game_players (
 
 CREATE TABLE IF NOT EXISTS game_prompts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  engine text NOT NULL,          -- 'vote_reveal' | 'trivia' | 'deduction' (future)
+  engine text NOT NULL,          -- 'vote_reveal' | 'most_likely' | 'trivia' | 'deduction' (future)
   category text NOT NULL,        -- 'general' | 'boys' | 'church' | 'couples' | 'football' | 'bible' etc.
   prompt_text text NOT NULL,
   options jsonb,                 -- e.g. ["Option A", "Option B"] for fixed-choice prompts; null if options = player names
+  correct_answer text,           -- 'trivia' engine only: which options[] entry is correct; null for vote_reveal/most_likely
   created_at timestamptz DEFAULT now()
 );
+
+-- If correct_answer column doesn't exist yet on existing table, add it
+-- (used by the trivia engine seeded via scripts/seed-trivia.ts)
+ALTER TABLE game_prompts ADD COLUMN IF NOT EXISTS correct_answer text;
+
+-- Dedupe target for scripts/seed-trivia.ts, which upserts with
+-- ON CONFLICT (prompt_text) DO NOTHING so repeat runs never insert the same
+-- question twice
+CREATE UNIQUE INDEX IF NOT EXISTS idx_game_prompts_prompt_text_unique ON game_prompts (prompt_text);
 
 CREATE TABLE IF NOT EXISTS game_votes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
