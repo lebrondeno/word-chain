@@ -37,10 +37,15 @@ interface GameContextType {
     category?: string,
     gameType?: string
   ) => Promise<{ success: boolean; roomCode?: string; error?: string }>;
-  joinGame: (roomCode: string, displayName: string) => Promise<{ success: boolean; error?: string }>;
+  joinGame: (
+    roomCode: string,
+    displayName: string,
+    rejoinMode?: 'reuse' | 'new'
+  ) => Promise<{ success: boolean; error?: string; needsRejoinConfirm?: boolean; existingPlayerName?: string }>;
   setGameSettings: (gameType: string, category: string) => Promise<{ success: boolean; error?: string }>;
   startGame: () => Promise<{ success: boolean; error?: string }>;
   submitWord: (word: string) => Promise<{ success: boolean; error?: string }>;
+  submitGuess: (guess: 'higher' | 'lower') => Promise<{ success: boolean; error?: string }>;
   submitVote: (choice: string) => Promise<{ success: boolean; error?: string }>;
   nextVoteRound: () => Promise<{ success: boolean; error?: string }>;
   revealVotes: () => Promise<{ success: boolean; error?: string }>;
@@ -159,6 +164,27 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isMounted = false;
     };
   }, [fetchSessionState, localPlayer?.sessionId, updateLocalPlayer]);
+
+  // Resync on tab resume (e.g. a phone locked mid-game). Mobile browsers
+  // routinely suspend JS execution - and the realtime socket with it - while
+  // a tab is backgrounded; most reconnect their websocket automatically on
+  // resume, but this is a belt-and-suspenders fetch so a player always sees
+  // fresh, correct state the instant the tab becomes visible again rather
+  // than trusting that reconnect timing. localStorage already carries the
+  // session across the background/foreground cycle (see the restore effect
+  // above), so this only needs to refresh data, never re-establish identity.
+  useEffect(() => {
+    if (!localPlayer?.sessionId) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchSessionState(localPlayer.sessionId);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [fetchSessionState, localPlayer?.sessionId]);
 
   // Realtime subscription setup
   useEffect(() => {
@@ -352,7 +378,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       soundManager.playWinner();
     }
 
-    if (session.game_type === 'word_chain') {
+    if (session.game_type === 'word_chain' || session.game_type === 'higher_lower') {
+      // Both are per-player turn-order games (as opposed to the simultaneous
+      // vote_reveal/most_likely/trivia rounds below) - a turn-chime on
+      // current_turn_index change applies identically to either
       if (session.status === 'playing' && session.current_turn_index !== prevTurnIndexRef.current) {
         if (isMyTurn) {
           soundManager.playTurnStart();
@@ -392,10 +421,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Turn / Round Countdown Timer & automatic timeout trigger
   useEffect(() => {
     // vote_reveal, most_likely, and trivia all run simultaneous rounds (20s),
-    // as opposed to word_chain's per-player turn timer (30s)
+    // as opposed to word_chain's per-player turn timer (30s). higher_lower is
+    // per-player turn-order like word_chain (falls into the same generic
+    // "else if (currentTurnPlayerId)" timeout branch below), just with a
+    // shorter 20s-per-turn timer.
     const isVoteReveal = session?.game_type === 'vote_reveal' || session?.game_type === 'most_likely';
     const isTrivia = session?.game_type === 'trivia';
-    const defaultTimer = isTrivia || isVoteReveal ? 20 : 30;
+    const isHigherLower = session?.game_type === 'higher_lower';
+    const defaultTimer = isTrivia || isVoteReveal || isHigherLower ? 20 : 30;
 
     if (session?.status !== 'playing' || !session.turn_deadline) {
       setTimeRemaining(defaultTimer);
@@ -515,19 +548,28 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return {
           id: selected.id,
           prompt_text: selected.prompt_text,
-          options: resolvePromptOptions(selected.options as VoteRevealPrompt['options']),
+          // A null options column means "vote for a player" only for
+          // most_likely - higher_lower also has null options, but those mean
+          // "compare numeric_value instead", not "fall back to the player
+          // roster", so resolvePromptOptions must not run for it
+          options:
+            engine === 'most_likely'
+              ? resolvePromptOptions(selected.options as VoteRevealPrompt['options'])
+              : (selected.options as VoteRevealPrompt['options']),
           category: selected.category,
           correct_answer: selected.correct_answer || undefined,
+          numeric_value: selected.numeric_value ?? undefined,
         };
       }
     } catch (e) {
       console.warn('Could not query game_prompts from DB, using fallback prompts:', e);
     }
 
-    // Local fallback from SEED_PROMPTS. Trivia has no bundled fallback content
-    // (it's seeded server-side only via scripts/seed-trivia.ts), so this pool
-    // is empty for that engine - surface a clear error instead of crashing on
-    // an undefined `selected` below.
+    // Local fallback from SEED_PROMPTS. Trivia and higher_lower have no
+    // bundled fallback content (seeded server-side only, via
+    // scripts/seed-trivia.ts and supabase/schema.sql respectively), so this
+    // pool is empty for those engines - surface a clear error instead of
+    // crashing on an undefined `selected` below.
     const enginePrompts = SEED_PROMPTS.filter((p) => p.engine === engine);
     const catPrompts = enginePrompts.filter((p) => p.category === category);
     const pool = catPrompts.length > 0 ? catPrompts : enginePrompts;
@@ -537,6 +579,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(
         engine === 'trivia'
           ? 'No trivia prompts available. Run `npx tsx scripts/seed-trivia.ts` first.'
+          : engine === 'higher_lower'
+          ? 'No higher_lower prompts available. Re-run supabase/schema.sql to seed them.'
           : `No ${engine} prompts available for category "${category}".`
       );
     }
@@ -544,7 +588,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return {
       id: selected.id,
       prompt_text: selected.prompt_text,
-      options: resolvePromptOptions(selected.options),
+      options: engine === 'most_likely' ? resolvePromptOptions(selected.options) : selected.options,
       category: selected.category,
     };
   };
@@ -622,11 +666,32 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Action: Join Game
-  const joinGame = async (roomCode: string, displayName: string) => {
+  //
+  // A player whose local session got wiped (private browsing, a different
+  // device, a cleared tab, or - the mobile-lock-screen case in section 4 of
+  // the polish pass - a browser that fully evicted the page while
+  // backgrounded) comes back through this same join form instead of the
+  // localStorage-backed restore effect above. Without a name-based lookup,
+  // every such rejoin used to INSERT a brand new game_players row (a
+  // duplicate entry in the roster) and, once the game had left 'lobby', was
+  // rejected outright by the status check below - a dead end with no way
+  // back into an in-progress game.
+  //
+  // rejoinMode is undefined on the form's first submit: if an existing
+  // non-eliminated player with the same (trimmed, case-insensitive) name is
+  // found in this session, we return needsRejoinConfirm instead of mutating
+  // anything, so the UI can ask "Rejoin as [name]?" before deciding. The
+  // caller then resubmits with 'reuse' (attach to that existing row, no
+  // insert - this is what makes an in-progress-game rejoin work at all,
+  // since new inserts stay blocked once status isn't 'lobby') or 'new'
+  // (two different people sharing a display name; insert a fresh row, only
+  // allowed pre-start same as before).
+  const joinGame = async (roomCode: string, displayName: string, rejoinMode?: 'reuse' | 'new') => {
     setError(null);
     setLoading(true);
     const supabase = getSupabase();
     const cleanCode = sanitizeRoomCode(roomCode);
+    const cleanName = displayName.trim() || 'Player';
 
     try {
       const { data: sessionData, error: sessionErr } = await supabase
@@ -639,6 +704,51 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Room not found. Check the code and try again.');
       }
 
+      const { data: existingPlayers } = await supabase
+        .from('game_players')
+        .select('*')
+        .eq('session_id', sessionData.id)
+        .eq('is_eliminated', false);
+
+      const existingMatch = (existingPlayers || []).find(
+        (p) => p.display_name.trim().toLowerCase() === cleanName.toLowerCase()
+      );
+
+      if (existingMatch && rejoinMode !== 'new') {
+        if (!rejoinMode) {
+          // Ask before silently merging into someone else's row - two
+          // different people at the table may share a first name.
+          setLoading(false);
+          return { success: false, needsRejoinConfirm: true, existingPlayerName: existingMatch.display_name };
+        }
+
+        // rejoinMode === 'reuse': attach to the existing row instead of
+        // inserting. Deliberately does not touch is_eliminated/score here -
+        // reconnecting shouldn't un-eliminate a player or reset their
+        // progress, just restore their view of the game.
+        const { data: allPlayers } = await supabase
+          .from('game_players')
+          .select('*')
+          .eq('session_id', sessionData.id)
+          .order('joined_at', { ascending: true });
+
+        const isHost = allPlayers && allPlayers.length > 0 && allPlayers[0].id === existingMatch.id;
+
+        const local: LocalPlayerSession = {
+          playerId: existingMatch.id,
+          sessionId: sessionData.id,
+          roomCode: sessionData.room_code,
+          displayName: existingMatch.display_name,
+          isHost: Boolean(isHost),
+        };
+
+        updateLocalPlayer(local);
+        setSession(sessionData as GameSession);
+        setPlayers((allPlayers || [existingMatch]) as GamePlayer[]);
+
+        return { success: true };
+      }
+
       if (sessionData.status !== 'lobby') {
         throw new Error('Game has already started in this room.');
       }
@@ -647,7 +757,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .from('game_players')
         .insert({
           session_id: sessionData.id,
-          display_name: displayName.trim() || 'Player',
+          display_name: cleanName,
           is_eliminated: false,
         })
         .select()
@@ -799,6 +909,31 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         setSession(updatedSession as GameSession);
         return { success: true };
+      } else if (session.game_type === 'higher_lower') {
+        const prompt = await pickRandomPrompt(session.category || 'population', [], 'higher_lower');
+        const deadline = new Date(Date.now() + 20000).toISOString();
+        const config = {
+          current_prompt: prompt,
+          used_prompt_ids: [prompt.id],
+        };
+
+        const { data: updatedSession, error: updateErr } = await supabase
+          .from('game_sessions')
+          .update({
+            status: 'playing',
+            turn_order: shuffledIds,
+            current_turn_index: 0,
+            turn_deadline: deadline,
+            game_config: config,
+          })
+          .eq('id', session.id)
+          .select()
+          .single();
+
+        if (updateErr) throw updateErr;
+
+        setSession(updatedSession as GameSession);
+        return { success: true };
       } else {
         // Word Chain fallback (30s timer)
         const deadline = new Date(Date.now() + 30000).toISOString();
@@ -898,6 +1033,20 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const deadline = new Date(Date.now() + 30000).toISOString();
 
+      if (isFinished) {
+        // localPlayer is the sole remaining active player - award Game Night
+        // points: +3 for winning, +1 per round survived (words they
+        // personally landed this game, including this final one)
+        const winnerRounds = updatedUsedWords.filter(
+          (w) => typeof w !== 'string' && w.player_id === localPlayer.playerId
+        ).length;
+        const winner = players.find((p) => p.id === localPlayer.playerId);
+        await supabase
+          .from('game_players')
+          .update({ total_score: (winner?.total_score || 0) + 3 + winnerRounds })
+          .eq('id', localPlayer.playerId);
+      }
+
       const { data: updatedSession, error: updateErr } = await supabase
         .from('game_sessions')
         .update({
@@ -919,6 +1068,182 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err: unknown) {
       soundManager.playError();
       const message = err instanceof Error ? err.message : 'Failed to submit word';
+      setError(message);
+      return { success: false, error: message };
+    }
+  };
+
+  // Action: Submit Guess (Higher or Lower). Turn/elimination shape mirrors
+  // submitWord above (verify turn, mutate, advance/finish) minus the word
+  // validation - the only new piece is comparing numeric_value against the
+  // freshly-drawn prompt.
+  const submitGuess = async (guess: 'higher' | 'lower') => {
+    if (!session || !localPlayer) {
+      return { success: false, error: 'Session not active' };
+    }
+
+    if (!isMyTurn) {
+      soundManager.playError();
+      return { success: false, error: 'It is not your turn!' };
+    }
+
+    const supabase = getSupabase();
+
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('submit_guess', {
+        p_session_id: session.id,
+        p_player_id: localPlayer.playerId,
+        p_guess: guess,
+      });
+
+      if (!rpcErr && rpcData) {
+        if (rpcData.correct) {
+          soundManager.playCorrect();
+        } else {
+          soundManager.playEliminated();
+        }
+        await fetchSessionState(session.id);
+        return { success: true };
+      }
+
+      // Direct fallback mutation (20s deadline)
+      const currentPrompt = session.game_config?.current_prompt;
+      if (!currentPrompt || currentPrompt.numeric_value === undefined) {
+        throw new Error('No active number for this round');
+      }
+      const currentValue = currentPrompt.numeric_value;
+
+      const usedIds = (session.game_config?.used_prompt_ids as string[]) || [];
+      const newPrompt = await pickRandomPrompt(session.category || 'population', usedIds, 'higher_lower');
+      const newValue = newPrompt.numeric_value ?? 0;
+
+      let isCorrect: boolean;
+      if (newValue > currentValue) isCorrect = guess === 'higher';
+      else if (newValue < currentValue) isCorrect = guess === 'lower';
+      else isCorrect = false;
+
+      const guessEntry = {
+        player_id: localPlayer.playerId,
+        player_name: localPlayer.displayName,
+        guess,
+        correct: isCorrect,
+        previous_prompt_text: currentPrompt.prompt_text,
+        previous_value: currentValue,
+        new_prompt_text: newPrompt.prompt_text,
+        new_value: newValue,
+        guessed_at: new Date().toISOString(),
+      };
+
+      const newHistory = [...(session.game_config?.guess_history || []), guessEntry];
+      const newConfig = {
+        current_prompt: {
+          id: newPrompt.id,
+          prompt_text: newPrompt.prompt_text,
+          numeric_value: newValue,
+          category: newPrompt.category,
+        },
+        last_guess: guessEntry,
+        guess_history: newHistory,
+        used_prompt_ids: [...usedIds, newPrompt.id],
+      };
+
+      const totalInOrder = turnOrder.length;
+      let nextIndex = session.current_turn_index;
+      for (let i = 1; i <= totalInOrder; i++) {
+        const candidateIndex = (session.current_turn_index + i) % totalInOrder;
+        const candidateId = turnOrder[candidateIndex];
+        const isElim = players.find((p) => p.id === candidateId)?.is_eliminated;
+        if (!isElim) {
+          nextIndex = candidateIndex;
+          break;
+        }
+      }
+
+      const deadline = new Date(Date.now() + 20000).toISOString();
+
+      if (!isCorrect) {
+        soundManager.playEliminated();
+
+        await supabase
+          .from('game_players')
+          .update({ is_eliminated: true })
+          .eq('id', localPlayer.playerId);
+
+        const { data: currentPlayers } = await supabase
+          .from('game_players')
+          .select('*')
+          .eq('session_id', session.id)
+          .order('joined_at', { ascending: true });
+
+        const updatedPlayersList = (currentPlayers || players) as GamePlayer[];
+        const remainingActive = updatedPlayersList.filter((p) => !p.is_eliminated);
+        const isFinished = remainingActive.length <= 1 && totalInOrder > 1;
+
+        if (isFinished) {
+          const winner = remainingActive[0];
+          if (winner) {
+            // Award Game Night points: +3 for winning, +1 per round survived
+            // (correct guesses they personally landed this game)
+            const winnerRounds = newHistory.filter(
+              (g) => g.player_id === winner.id && g.correct
+            ).length;
+            await supabase
+              .from('game_players')
+              .update({ total_score: (winner.total_score || 0) + 3 + winnerRounds })
+              .eq('id', winner.id);
+          }
+
+          const { data: updatedSession, error: updateErr } = await supabase
+            .from('game_sessions')
+            .update({ status: 'finished', turn_deadline: null, game_config: newConfig })
+            .eq('id', session.id)
+            .select()
+            .single();
+
+          if (updateErr) throw updateErr;
+          setSession(updatedSession as GameSession);
+          return { success: true };
+        }
+
+        // Re-derive next index against the post-elimination roster, not the
+        // stale `players` snapshot used for the first pass above
+        let elimAdjustedIndex = session.current_turn_index;
+        for (let i = 1; i <= totalInOrder; i++) {
+          const candidateIndex = (session.current_turn_index + i) % totalInOrder;
+          const candidateId = turnOrder[candidateIndex];
+          const isElim = updatedPlayersList.find((p) => p.id === candidateId)?.is_eliminated;
+          if (!isElim) {
+            elimAdjustedIndex = candidateIndex;
+            break;
+          }
+        }
+
+        const { data: updatedSession, error: updateErr } = await supabase
+          .from('game_sessions')
+          .update({ current_turn_index: elimAdjustedIndex, turn_deadline: deadline, game_config: newConfig })
+          .eq('id', session.id)
+          .select()
+          .single();
+
+        if (updateErr) throw updateErr;
+        setSession(updatedSession as GameSession);
+        return { success: true };
+      }
+
+      // Correct guess: nobody eliminated, advance to the next active player
+      soundManager.playCorrect();
+      const { data: updatedSession, error: updateErr } = await supabase
+        .from('game_sessions')
+        .update({ current_turn_index: nextIndex, turn_deadline: deadline, game_config: newConfig })
+        .eq('id', session.id)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+      setSession(updatedSession as GameSession);
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to submit guess';
       setError(message);
       return { success: false, error: message };
     }
@@ -1241,8 +1566,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // Word Chain timeout handling
+      // Word Chain / Higher-or-Lower timeout handling: both are elimination-
+      // based, turn-order games where a timeout eliminates whoever's turn it
+      // was, just like a wrong submission/guess would
       if (!currentTurnPlayerId) return;
+      const isHigherLower = session.game_type === 'higher_lower';
+      const turnDeadlineMs = isHigherLower ? 20000 : 30000;
 
       const { data: rpcData, error: rpcErr } = await supabase.rpc('handle_timeout', {
         p_session_id: session.id,
@@ -1257,8 +1586,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // Fallback direct mutation (30s)
-      soundManager.playEliminated();
+      // Fallback direct mutation (30s). Only the eliminated player's own
+      // client plays the sound, matching the RPC-success path above - every
+      // connected client independently runs this timeout handler, so an
+      // unconditional play here would sound the elimination cue for everyone
+      // in the room, not just the player it happened to.
+      if (currentTurnPlayerId === localPlayer?.playerId) {
+        soundManager.playEliminated();
+      }
 
       await supabase
         .from('game_players')
@@ -1276,6 +1611,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const remainingActive = updatedPlayersList.filter((p) => !p.is_eliminated);
 
       if (remainingActive.length <= 1 && turnOrder.length > 1) {
+        const winner = remainingActive[0];
+        if (winner) {
+          // Award Game Night points: +3 for winning, +1 per round survived -
+          // word_chain counts words landed (used_words), higher_lower counts
+          // correct guesses landed (game_config.guess_history)
+          const winnerRounds = isHigherLower
+            ? (session.game_config?.guess_history || []).filter(
+                (g) => g.player_id === winner.id && g.correct
+              ).length
+            : (session.used_words || []).filter(
+                (w) => typeof w !== 'string' && w.player_id === winner.id
+              ).length;
+          await supabase
+            .from('game_players')
+            .update({ total_score: (winner.total_score || 0) + 3 + winnerRounds })
+            .eq('id', winner.id);
+        }
+
         await supabase
           .from('game_sessions')
           .update({
@@ -1296,7 +1649,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        const deadline = new Date(Date.now() + 30000).toISOString();
+        const deadline = new Date(Date.now() + turnDeadlineMs).toISOString();
         await supabase
           .from('game_sessions')
           .update({
@@ -1328,6 +1681,23 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Direct fallback
+
+      // Trivia's round-set is ending here - roll each player's per-game
+      // `score` into the persistent Game Night `total_score` before it gets
+      // zeroed below. word_chain already awarded its winner at the moment
+      // the game finished (see submitWord/handleTimeout above); vote_reveal/
+      // most_likely are non-competitive and never touch total_score.
+      if (session.game_type === 'trivia') {
+        await Promise.all(
+          players.map((p) =>
+            supabase
+              .from('game_players')
+              .update({ total_score: (p.total_score || 0) + (p.score || 0) })
+              .eq('id', p.id)
+          )
+        );
+      }
+
       await supabase
         .from('game_players')
         .update({ is_eliminated: false, score: 0 })
@@ -1400,6 +1770,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setGameSettings,
         startGame,
         submitWord,
+        submitGuess,
         submitVote,
         nextVoteRound,
         revealVotes,

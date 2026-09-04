@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { CATEGORIES, getFirstLetter, getLastLetter } from '../data';
+import { HIGHER_LOWER_CATEGORIES } from '../data/prompts';
 import confetti from 'canvas-confetti';
 import {
   Trophy,
@@ -8,6 +9,8 @@ import {
   Crown,
   History,
   LogOut,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 
 export const FinishedView: React.FC = () => {
@@ -43,8 +46,18 @@ export const FinishedView: React.FC = () => {
 
   if (!session) return null;
 
-  const categoryInfo = CATEGORIES[session.category] || CATEGORIES['cities'];
+  // word_chain is the only game type this screen was originally built for;
+  // higher_lower also reaches status 'finished' the same way (elimination
+  // down to one player), so its stats/recap need their own branch rather
+  // than showing word-chain's used_words-based content for a game that
+  // never touches that column
+  const isHigherLower = session.game_type === 'higher_lower';
+  const categoryInfo = isHigherLower
+    ? HIGHER_LOWER_CATEGORIES[session.category] || HIGHER_LOWER_CATEGORIES['population']
+    : CATEGORIES[session.category] || CATEGORIES['cities'];
   const usedWordsList = session.used_words || [];
+  const guessHistory = session.game_config?.guess_history || [];
+  const correctGuessCount = guessHistory.filter((g) => g.correct).length;
   const isMeWinner = winnerPlayer?.id === localPlayer?.playerId;
 
   const handlePlayAgain = async () => {
@@ -78,7 +91,11 @@ export const FinishedView: React.FC = () => {
         </h2>
 
         <p className="text-xs text-slate-400 max-w-xs mx-auto mb-5">
-          {isMeWinner
+          {isHigherLower
+            ? isMeWinner
+              ? 'You called every guess right and outlasted everyone else!'
+              : `${winnerPlayer?.display_name || 'The champion'} never guessed wrong.`
+            : isMeWinner
             ? 'You outlasted all opponents and kept the word chain alive!'
             : `${winnerPlayer?.display_name || 'The champion'} held the chain to the very end.`}
         </p>
@@ -87,10 +104,10 @@ export const FinishedView: React.FC = () => {
         <div className="grid grid-cols-2 gap-2 mb-6">
           <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl">
             <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">
-              Words Linked
+              {isHigherLower ? 'Correct Guesses' : 'Words Linked'}
             </div>
             <div className="text-xl font-black text-indigo-400">
-              {usedWordsList.length}
+              {isHigherLower ? correctGuessCount : usedWordsList.length}
             </div>
           </div>
 
@@ -135,56 +152,101 @@ export const FinishedView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Full Word Chain Recap */}
-      {usedWordsList.length > 0 && (
-        <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 shadow-lg backdrop-blur-sm">
-          <div className="flex items-center justify-between mb-3 px-1">
-            <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-indigo-400" />
-              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-300">
-                Full Word Chain Recap
-              </h3>
+      {/* 2. Full Recap - word chain's word chain, or higher_lower's guess history */}
+      {isHigherLower ? (
+        guessHistory.length > 0 && (
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 shadow-lg backdrop-blur-sm">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <div className="flex items-center gap-2">
+                <History className="w-4 h-4 text-indigo-400" />
+                <h3 className="font-bold text-xs uppercase tracking-wider text-slate-300">
+                  Full Guess History
+                </h3>
+              </div>
+              <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
+                {guessHistory.length} guesses
+              </span>
             </div>
-            <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
-              {usedWordsList.length} words
-            </span>
-          </div>
 
-          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-            {usedWordsList.map((item, idx) => {
-              const wordText = typeof item === 'string' ? item : item.display_word || item.word;
-              const playerName = typeof item === 'string' ? null : item.player_name;
-              const firstChar = getFirstLetter(wordText);
-              const lastChar = getLastLetter(wordText);
-
-              return (
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {guessHistory.map((g, idx) => (
                 <div
                   key={idx}
-                  className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between text-xs"
+                  className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between text-xs gap-2"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-slate-500 w-4">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] font-mono text-slate-500 w-4 shrink-0">
                       #{idx + 1}
                     </span>
-                    <span className="font-semibold text-slate-200">
-                      <span className="text-indigo-400 font-bold">{firstChar}</span>
-                      <span>{wordText.slice(1, -1)}</span>
-                      <span className="text-amber-400 font-bold underline">
-                        {lastChar}
-                      </span>
+                    {g.correct ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    )}
+                    <span className="font-semibold text-slate-200 truncate">
+                      {g.player_name} guessed {g.guess.toUpperCase()}
                     </span>
                   </div>
 
-                  {playerName && (
-                    <span className="text-[11px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                      {playerName}
-                    </span>
-                  )}
+                  <span className="text-[11px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">
+                    {g.previous_value.toLocaleString()} → {g.new_value.toLocaleString()}
+                  </span>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        </div>
+        )
+      ) : (
+        usedWordsList.length > 0 && (
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 shadow-lg backdrop-blur-sm">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <div className="flex items-center gap-2">
+                <History className="w-4 h-4 text-indigo-400" />
+                <h3 className="font-bold text-xs uppercase tracking-wider text-slate-300">
+                  Full Word Chain Recap
+                </h3>
+              </div>
+              <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
+                {usedWordsList.length} words
+              </span>
+            </div>
+
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {usedWordsList.map((item, idx) => {
+                const wordText = typeof item === 'string' ? item : item.display_word || item.word;
+                const playerName = typeof item === 'string' ? null : item.player_name;
+                const firstChar = getFirstLetter(wordText);
+                const lastChar = getLastLetter(wordText);
+
+                return (
+                  <div
+                    key={idx}
+                    className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-slate-500 w-4">
+                        #{idx + 1}
+                      </span>
+                      <span className="font-semibold text-slate-200">
+                        <span className="text-indigo-400 font-bold">{firstChar}</span>
+                        <span>{wordText.slice(1, -1)}</span>
+                        <span className="text-amber-400 font-bold underline">
+                          {lastChar}
+                        </span>
+                      </span>
+                    </div>
+
+                    {playerName && (
+                      <span className="text-[11px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                        {playerName}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )
       )}
     </div>
   );

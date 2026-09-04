@@ -7,7 +7,7 @@ export interface PromptData {
 }
 
 export interface GameTypeInfo {
-  id: 'word_chain' | 'vote_reveal' | 'most_likely' | 'trivia';
+  id: 'word_chain' | 'vote_reveal' | 'most_likely' | 'trivia' | 'higher_lower';
   name: string;
   shortName: string;
   icon: string;
@@ -85,6 +85,22 @@ export const TRIVIA_CATEGORIES: Record<string, { id: string; name: string; icon:
   },
 };
 
+// Matches the category slugs seeded into game_prompts under engine = 'higher_lower'
+export const HIGHER_LOWER_CATEGORIES: Record<string, { id: string; name: string; icon: string; description: string }> = {
+  population: {
+    id: 'population',
+    name: 'World Populations',
+    icon: '🌆',
+    description: 'City & country population figures',
+  },
+  football_stats: {
+    id: 'football_stats',
+    name: 'Football Stats',
+    icon: '⚽',
+    description: "Legendary players' international caps",
+  },
+};
+
 export const GAME_TYPES: Record<string, GameTypeInfo> = {
   word_chain: {
     id: 'word_chain',
@@ -135,6 +151,17 @@ export const GAME_TYPES: Record<string, GameTypeInfo> = {
       { id: 'geography', name: 'Geography', icon: '🌍', description: 'Countries, capitals & landmarks' },
       { id: 'animals', name: 'Animals', icon: '🦁', description: 'Wildlife, pets & the animal kingdom' },
       { id: 'history', name: 'History', icon: '📜', description: 'Events, eras & historical figures' },
+    ],
+  },
+  higher_lower: {
+    id: 'higher_lower',
+    name: 'Higher or Lower',
+    shortName: 'Higher/Lower',
+    icon: '📈',
+    description: 'Guess if the next number is higher or lower - one wrong guess and you\'re out',
+    categories: [
+      { id: 'population', name: 'World Populations', icon: '🌆', description: 'City & country population figures' },
+      { id: 'football_stats', name: 'Football Stats', icon: '⚽', description: "Legendary players' international caps" },
     ],
   },
 };

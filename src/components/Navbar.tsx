@@ -7,15 +7,18 @@ import {
   HelpCircle,
   LogOut,
   Share2,
+  Trophy,
 } from 'lucide-react';
 import { RulesModal } from './RulesModal';
 import { ShareModal } from './ShareModal';
+import { GameNightLeaderboard } from './GameNightLeaderboard';
 
 export const Navbar: React.FC = () => {
   const { session, leaveGame } = useGame();
   const [isMuted, setIsMuted] = useState(() => soundManager.getMuted());
   const [isRulesOpen, setIsRulesOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
 
   const handleToggleSound = () => {
     const nextMuted = soundManager.toggleMute();
@@ -62,6 +65,19 @@ export const Navbar: React.FC = () => {
 
           {/* Right Action buttons */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Game Night Leaderboard - only meaningful once in a room; shows
+                total_score across every game type played tonight, min-w/h-11
+                (44px) meets the iOS/Android minimum tap target on mobile */}
+            {session && (
+              <button
+                onClick={() => setIsLeaderboardOpen(true)}
+                title="Game Night Leaderboard"
+                className="min-w-11 min-h-11 sm:min-w-0 sm:min-h-0 flex items-center justify-center p-1.5 sm:p-2 text-amber-400 hover:text-amber-300 rounded-xl hover:bg-slate-800/80 transition shrink-0"
+              >
+                <Trophy className="w-5 h-5" />
+              </button>
+            )}
+
             {/* Rules Button - hidden on mobile to keep the header compact; still available via desktop header */}
             <button
               onClick={() => setIsRulesOpen(true)}
@@ -104,11 +120,17 @@ export const Navbar: React.FC = () => {
       {/* Modals */}
       <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} />
       {session && (
-        <ShareModal
-          isOpen={isShareOpen}
-          onClose={() => setIsShareOpen(false)}
-          roomCode={session.room_code}
-        />
+        <>
+          <ShareModal
+            isOpen={isShareOpen}
+            onClose={() => setIsShareOpen(false)}
+            roomCode={session.room_code}
+          />
+          <GameNightLeaderboard
+            isOpen={isLeaderboardOpen}
+            onClose={() => setIsLeaderboardOpen(false)}
+          />
+        </>
       )}
     </>
   );

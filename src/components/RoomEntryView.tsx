@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { CATEGORIES } from '../data';
-import { VOTE_REVEAL_CATEGORIES, TRIVIA_CATEGORIES, GAME_TYPES } from '../data/prompts';
+import { VOTE_REVEAL_CATEGORIES, TRIVIA_CATEGORIES, HIGHER_LOWER_CATEGORIES, GAME_TYPES } from '../data/prompts';
 import { sanitizeRoomCode } from '../lib/roomCode';
-import { Play, UserPlus, Sparkles, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Play, UserPlus, Sparkles, AlertCircle, ArrowRight, ShieldCheck, UserCheck } from 'lucide-react';
 
 interface RoomEntryViewProps {
   initialRoomCode?: string;
@@ -22,6 +22,12 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
   const [roomCode, setRoomCode] = useState(initialRoomCode || '');
   const [gameType, setGameType] = useState<string>('word_chain');
   const [category, setCategory] = useState<string>('cities');
+  // Set when joinGame finds an existing (non-eliminated) player with the same
+  // name already in the room - lets the player choose to reconnect to that
+  // row instead of silently creating a duplicate, or confirm they're a
+  // different person joining fresh.
+  const [rejoinPrompt, setRejoinPrompt] = useState<string | null>(null);
+  const [rejoining, setRejoining] = useState(false);
 
   useEffect(() => {
     if (initialRoomCode) {
@@ -32,6 +38,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
 
   const saveName = (name: string) => {
     setDisplayName(name);
+    setRejoinPrompt(null);
     if (typeof window !== 'undefined') {
       localStorage.setItem('word_chain_saved_name', name.trim());
     }
@@ -43,6 +50,8 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
       setCategory('general');
     } else if (typeId === 'trivia') {
       setCategory('general_knowledge');
+    } else if (typeId === 'higher_lower') {
+      setCategory('population');
     } else {
       setCategory('cities');
     }
@@ -67,12 +76,31 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
       setError('Please enter a display name');
       return;
     }
-    await joinGame(roomCode.trim(), displayName.trim());
+    setRejoinPrompt(null);
+    const res = await joinGame(roomCode.trim(), displayName.trim());
+    if (res.needsRejoinConfirm && res.existingPlayerName) {
+      setRejoinPrompt(res.existingPlayerName);
+    }
+  };
+
+  const handleRejoinAsExisting = async () => {
+    setRejoining(true);
+    await joinGame(roomCode.trim(), displayName.trim(), 'reuse');
+    setRejoining(false);
+    setRejoinPrompt(null);
+  };
+
+  const handleJoinAsNew = async () => {
+    setRejoining(true);
+    await joinGame(roomCode.trim(), displayName.trim(), 'new');
+    setRejoining(false);
+    setRejoinPrompt(null);
   };
 
   const configured = isSupabaseConfigured();
   const isVoteReveal = gameType === 'vote_reveal';
   const isTrivia = gameType === 'trivia';
+  const isHigherLower = gameType === 'higher_lower';
 
   return (
     <div className="w-full max-w-md mx-auto px-4 py-8 animate-fade-in">
@@ -113,6 +141,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
             onClick={() => {
               setMode('create');
               setError(null);
+              setRejoinPrompt(null);
             }}
             className={`flex-1 py-2.5 text-xs sm:text-sm font-semibold rounded-xl transition flex items-center justify-center gap-2 ${
               mode === 'create'
@@ -127,6 +156,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
             onClick={() => {
               setMode('join');
               setError(null);
+              setRejoinPrompt(null);
             }}
             className={`flex-1 py-2.5 text-xs sm:text-sm font-semibold rounded-xl transition flex items-center justify-center gap-2 ${
               mode === 'join'
@@ -191,6 +221,8 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                             ? '30s turn timer'
                             : type.id === 'trivia'
                             ? '20s per question'
+                            : type.id === 'higher_lower'
+                            ? '20s per guess'
                             : '20s vote & reveal'}
                         </div>
                       </div>
@@ -205,7 +237,13 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
             {gameType !== 'most_likely' && (
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  {isVoteReveal ? 'Theme' : isTrivia ? 'Trivia Category' : 'Word Category'}
+                  {isVoteReveal
+                    ? 'Theme'
+                    : isTrivia
+                    ? 'Trivia Category'
+                    : isHigherLower
+                    ? 'Number Category'
+                    : 'Word Category'}
                 </label>
 
                 {isVoteReveal ? (
@@ -256,8 +294,32 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                       );
                     })}
                   </div>
-                ) : (
+                ) : isHigherLower ? (
                   <div className="grid grid-cols-2 gap-2">
+                    {Object.values(HIGHER_LOWER_CATEGORIES).map((cat) => {
+                      const isSelected = category === cat.id;
+                      return (
+                        <button
+                          type="button"
+                          key={cat.id}
+                          onClick={() => setCategory(cat.id)}
+                          className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                            isSelected
+                              ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
+                              : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span className="text-xl">{cat.icon}</span>
+                          <div className="overflow-hidden">
+                            <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{cat.description}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {Object.values(CATEGORIES).map((cat) => {
                       const isSelected = category === cat.id;
                       return (
@@ -318,7 +380,10 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                 placeholder="ABCD"
                 maxLength={4}
                 value={roomCode}
-                onChange={(e) => setRoomCode(sanitizeRoomCode(e.target.value))}
+                onChange={(e) => {
+                  setRoomCode(sanitizeRoomCode(e.target.value));
+                  setRejoinPrompt(null);
+                }}
                 required
                 className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl px-4 py-3 text-center text-xl font-mono font-bold tracking-widest text-indigo-400 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase transition"
               />
@@ -339,23 +404,61 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Joining Room...
-                </span>
-              ) : (
-                <>
-                  <span>Enter Game Lobby</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
+            {/* Rejoin Confirmation - shown when a non-eliminated player with
+                this same name is already in the room, so a reconnecting
+                player merges back into their existing seat instead of
+                silently creating a duplicate roster entry */}
+            {rejoinPrompt ? (
+              <div className="p-4 bg-indigo-950/40 border border-indigo-500/30 rounded-2xl space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <UserCheck className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-slate-300">
+                    <strong className="text-white">{rejoinPrompt}</strong> is already in this
+                    room. Is that you reconnecting?
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleRejoinAsExisting}
+                    disabled={rejoining}
+                    className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-2.5 rounded-xl text-sm transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {rejoining ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <span>Rejoin as {rejoinPrompt}</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleJoinAsNew}
+                    disabled={rejoining}
+                    className="w-full py-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-medium transition disabled:opacity-50"
+                  >
+                    No, I'm a different player - join as new
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full mt-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Joining Room...
+                  </span>
+                ) : (
+                  <>
+                    <span>Enter Game Lobby</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            )}
           </form>
         )}
       </div>

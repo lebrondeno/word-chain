@@ -6,6 +6,7 @@ import { WordHistoryDrawer } from './WordHistoryDrawer';
 import { VoteRevealGameView } from './VoteRevealGameView';
 import { MostLikelyGameView } from './MostLikelyGameView';
 import { TriviaGameView } from './TriviaGameView';
+import { HigherLowerGameView } from './HigherLowerGameView';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
   Clock,
@@ -61,6 +62,11 @@ export const GameView: React.FC = () => {
   // Delegate to TriviaGameView for trivia ("20-Second Challenge") game engine
   if (session.game_type === 'trivia') {
     return <TriviaGameView />;
+  }
+
+  // Delegate to HigherLowerGameView for the higher_lower game engine
+  if (session.game_type === 'higher_lower') {
+    return <HigherLowerGameView />;
   }
 
   const categoryInfo = CATEGORIES[session.category] || CATEGORIES['cities'];

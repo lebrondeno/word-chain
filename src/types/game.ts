@@ -1,6 +1,6 @@
 export type SessionStatus = 'lobby' | 'playing' | 'finished';
 
-export type GameType = 'word_chain' | 'vote_reveal' | 'most_likely' | 'trivia';
+export type GameType = 'word_chain' | 'vote_reveal' | 'most_likely' | 'trivia' | 'higher_lower';
 
 export interface UsedWordItem {
   word: string;
@@ -26,6 +26,24 @@ export interface VoteRevealPrompt {
   // per-player server-authoritative view - see TriviaGameView for the
   // fairness trade-off this implies.
   correct_answer?: string;
+  // 'higher_lower' engine only: the actual number this prompt represents,
+  // compared against the next prompt's numeric_value to grade a guess.
+  numeric_value?: number;
+}
+
+// 'higher_lower' engine only: one player's guess and its outcome, appended
+// to game_config.guess_history each turn (and mirrored into last_guess for
+// convenience) so every client can render the same reveal off realtime state.
+export interface HigherLowerGuess {
+  player_id: string;
+  player_name: string;
+  guess: 'higher' | 'lower';
+  correct: boolean;
+  previous_prompt_text: string;
+  previous_value: number;
+  new_prompt_text: string;
+  new_value: number;
+  guessed_at?: string;
 }
 
 export interface GameConfig {
@@ -34,6 +52,8 @@ export interface GameConfig {
   used_prompt_ids?: string[];
   voting_phase?: 'voting' | 'revealed'; // vote_reveal & most_likely
   phase?: 'answering' | 'revealed'; // trivia
+  last_guess?: HigherLowerGuess | null; // higher_lower
+  guess_history?: HigherLowerGuess[]; // higher_lower
   [key: string]: unknown;
 }
 
@@ -58,6 +78,11 @@ export interface GamePlayer {
   display_name: string;
   is_eliminated: boolean;
   score: number;
+  // Persistent "Game Night" leaderboard total - separate from the per-game
+  // `score` column above. Carries across "Play Again" and game-type switches
+  // within the same room; see supabase/schema.sql's reset_game/submit_word/
+  // handle_timeout for where it's written.
+  total_score: number;
   joined_at: string;
 }
 
@@ -68,6 +93,7 @@ export interface GamePrompt {
   prompt_text: string;
   options: [string, string] | string[] | null;
   correct_answer?: string | null;
+  numeric_value?: number | null;
   created_at?: string;
 }
 

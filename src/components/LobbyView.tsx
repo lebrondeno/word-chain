@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useGame } from '../context/GameContext';
 import { CATEGORIES } from '../data';
-import { VOTE_REVEAL_CATEGORIES, MOST_LIKELY_CATEGORIES, TRIVIA_CATEGORIES, GAME_TYPES } from '../data/prompts';
+import {
+  VOTE_REVEAL_CATEGORIES,
+  MOST_LIKELY_CATEGORIES,
+  TRIVIA_CATEGORIES,
+  HIGHER_LOWER_CATEGORIES,
+  GAME_TYPES,
+} from '../data/prompts';
 import { Play, Copy, Check, Share2, Crown, Users, AlertCircle, Settings2 } from 'lucide-react';
 import { ShareModal } from './ShareModal';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -25,6 +31,7 @@ export const LobbyView: React.FC = () => {
   const isVoteReveal = gameType === 'vote_reveal';
   const isMostLikely = gameType === 'most_likely';
   const isTrivia = gameType === 'trivia';
+  const isHigherLower = gameType === 'higher_lower';
   const activeGameType = GAME_TYPES[gameType] || GAME_TYPES.word_chain;
   const categoryInfo = isVoteReveal
     ? VOTE_REVEAL_CATEGORIES[session.category] || VOTE_REVEAL_CATEGORIES['general']
@@ -32,6 +39,8 @@ export const LobbyView: React.FC = () => {
     ? MOST_LIKELY_CATEGORIES[session.category] || MOST_LIKELY_CATEGORIES['general']
     : isTrivia
     ? TRIVIA_CATEGORIES[session.category] || TRIVIA_CATEGORIES['general_knowledge']
+    : isHigherLower
+    ? HIGHER_LOWER_CATEGORIES[session.category] || HIGHER_LOWER_CATEGORIES['population']
     : CATEGORIES[session.category] || CATEGORIES['cities'];
 
   const handleCopyLink = () => {
@@ -54,6 +63,8 @@ export const LobbyView: React.FC = () => {
         ? 'general'
         : newType === 'trivia'
         ? 'general_knowledge'
+        : newType === 'higher_lower'
+        ? 'population'
         : 'cities';
     await setGameSettings(newType, defaultCat);
     setUpdatingSettings(false);
@@ -203,6 +214,8 @@ export const LobbyView: React.FC = () => {
                         ? 'Vote for the player who fits'
                         : type.id === 'trivia'
                         ? '20s per question, race the clock'
+                        : type.id === 'higher_lower'
+                        ? 'Guess higher or lower, one miss and you\'re out'
                         : 'Group vote & reveal'}
                     </span>
                   </button>
@@ -215,7 +228,13 @@ export const LobbyView: React.FC = () => {
             {gameType !== 'most_likely' && (
               <div className="pt-2">
                 <label className="block text-xs font-semibold text-slate-300 mb-2">
-                  {isVoteReveal ? 'Prompt Theme' : isTrivia ? 'Trivia Category' : 'Word Category'}
+                  {isVoteReveal
+                    ? 'Prompt Theme'
+                    : isTrivia
+                    ? 'Trivia Category'
+                    : isHigherLower
+                    ? 'Number Category'
+                    : 'Word Category'}
                 </label>
 
                 {isVoteReveal ? (
@@ -248,6 +267,32 @@ export const LobbyView: React.FC = () => {
                   /* Trivia categories */
                   <div className="grid grid-cols-2 gap-2">
                     {Object.values(TRIVIA_CATEGORIES).map((cat) => {
+                      const isSelected = session.category === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => handleCategoryChange(cat.id)}
+                          disabled={updatingSettings}
+                          className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                            isSelected
+                              ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
+                              : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                          }`}
+                        >
+                          <span className="text-xl">{cat.icon}</span>
+                          <div className="overflow-hidden">
+                            <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{cat.description}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : isHigherLower ? (
+                  /* Higher or Lower categories */
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.values(HIGHER_LOWER_CATEGORIES).map((cat) => {
                       const isSelected = session.category === cat.id;
                       return (
                         <button
@@ -324,6 +369,8 @@ export const LobbyView: React.FC = () => {
                 ? 'Vote for the player who best fits each prompt within 20s.'
                 : isTrivia
                 ? 'Answer fast! You get 20 seconds per question - most correct answers wins.'
+                : isHigherLower
+                ? 'Guess higher or lower than the current number within 20s - one wrong guess and you\'re out.'
                 : 'Take turns linking words by last letter before the 30s timer runs out.'}
             </p>
           </div>

@@ -36,9 +36,16 @@ CREATE TABLE IF NOT EXISTS game_players (
 -- 'trivia' engine / "20-Second Challenge" game type)
 ALTER TABLE game_players ADD COLUMN IF NOT EXISTS score int NOT NULL DEFAULT 0;
 
+-- Persistent "Game Night" leaderboard total, separate from trivia's per-round
+-- `score` column above. Carries across "Play Again" and game-type switches
+-- within the same room/session - only reset_game's trivia roll-up (into this
+-- column) and word_chain's win-scoring (see submit_word/handle_timeout) ever
+-- write to it; nothing zeroes it on replay.
+ALTER TABLE game_players ADD COLUMN IF NOT EXISTS total_score int NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS game_prompts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  engine text NOT NULL,          -- 'vote_reveal' | 'most_likely' | 'trivia' | 'deduction' (future)
+  engine text NOT NULL,          -- 'vote_reveal' | 'most_likely' | 'trivia' | 'higher_lower' | 'deduction' (future)
   category text NOT NULL,        -- 'general' | 'boys' | 'church' | 'couples' | 'football' | 'bible' etc.
   prompt_text text NOT NULL,
   options jsonb,                 -- e.g. ["Option A", "Option B"] for fixed-choice prompts; null if options = player names
@@ -49,6 +56,12 @@ CREATE TABLE IF NOT EXISTS game_prompts (
 -- If correct_answer column doesn't exist yet on existing table, add it
 -- (used by the trivia engine seeded via scripts/seed-trivia.ts)
 ALTER TABLE game_prompts ADD COLUMN IF NOT EXISTS correct_answer text;
+
+-- 'higher_lower' engine only: the actual number to compare (e.g. a
+-- population figure or a player's international cap count). options stays
+-- null for this engine - the comparison is against numeric_value, not a
+-- fixed-choice list.
+ALTER TABLE game_prompts ADD COLUMN IF NOT EXISTS numeric_value int;
 
 -- Dedupe target for scripts/seed-trivia.ts, which upserts with
 -- ON CONFLICT (prompt_text) DO NOTHING so repeat runs never insert the same
@@ -216,6 +229,33 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- ==========================================================
+-- SEED DATA: GAME PROMPTS (Higher or Lower)
+-- ==========================================================
+-- Round, easily-verifiable numbers rather than obscure trivia - the fun is
+-- the guess itself, not stumping people. options stays null throughout;
+-- numeric_value is the only thing compared.
+
+INSERT INTO game_prompts (id, engine, category, prompt_text, options, numeric_value) VALUES
+  ('11111111-0006-4000-8000-000000000001', 'higher_lower', 'population', 'Tokyo, Japan''s population', null, 14000000),
+  ('11111111-0006-4000-8000-000000000002', 'higher_lower', 'population', 'Lagos, Nigeria''s population', null, 15000000),
+  ('11111111-0006-4000-8000-000000000003', 'higher_lower', 'population', 'Cairo, Egypt''s population', null, 10000000),
+  ('11111111-0006-4000-8000-000000000004', 'higher_lower', 'population', 'Mumbai, India''s population', null, 12500000),
+  ('11111111-0006-4000-8000-000000000005', 'higher_lower', 'population', 'London, United Kingdom''s population', null, 9000000),
+  ('11111111-0006-4000-8000-000000000006', 'higher_lower', 'population', 'New York City, USA''s population', null, 8300000),
+  ('11111111-0006-4000-8000-000000000007', 'higher_lower', 'population', 'Nairobi, Kenya''s population', null, 4400000),
+  ('11111111-0006-4000-8000-000000000008', 'higher_lower', 'population', 'Paris, France''s population', null, 2100000),
+
+  ('11111111-0007-4000-8000-000000000001', 'higher_lower', 'football_stats', 'Cristiano Ronaldo''s international caps', null, 215),
+  ('11111111-0007-4000-8000-000000000002', 'higher_lower', 'football_stats', 'Lionel Messi''s international caps', null, 190),
+  ('11111111-0007-4000-8000-000000000003', 'higher_lower', 'football_stats', 'Iker Casillas'' international caps', null, 167),
+  ('11111111-0007-4000-8000-000000000004', 'higher_lower', 'football_stats', 'Xavi Hernandez''s international caps', null, 133),
+  ('11111111-0007-4000-8000-000000000005', 'higher_lower', 'football_stats', 'Paolo Maldini''s international caps', null, 126),
+  ('11111111-0007-4000-8000-000000000006', 'higher_lower', 'football_stats', 'Zinedine Zidane''s international caps', null, 108),
+  ('11111111-0007-4000-8000-000000000007', 'higher_lower', 'football_stats', 'Ryan Giggs'' international caps', null, 64)
+ON CONFLICT (id) DO NOTHING;
+
+
+-- ==========================================================
 -- POSTGRES RPC FUNCTIONS (Atomic Concurrency & Game Logic)
 -- ==========================================================
 
@@ -368,6 +408,55 @@ BEGIN
       'turn_deadline', v_deadline,
       'game_config', v_new_config
     );
+  ELSIF v_session.game_type = 'higher_lower' THEN
+    -- Higher or Lower: pick a random starting prompt matching category as the
+    -- initial reference number, same turn-order/elimination shape as word
+    -- chain but with a 20s timer (like trivia/vote_reveal) instead of 30s
+    SELECT * INTO v_prompt
+    FROM game_prompts
+    WHERE engine = 'higher_lower' AND category = v_session.category
+    ORDER BY random()
+    LIMIT 1;
+
+    -- Fallback to any higher_lower prompt if category is empty
+    IF v_prompt.id IS NULL THEN
+      SELECT * INTO v_prompt
+      FROM game_prompts
+      WHERE engine = 'higher_lower'
+      ORDER BY random()
+      LIMIT 1;
+    END IF;
+
+    IF v_prompt.id IS NULL THEN
+      RAISE EXCEPTION 'No higher_lower prompts available';
+    END IF;
+
+    v_deadline := now() + interval '20 seconds';
+
+    v_new_config := jsonb_build_object(
+      'current_prompt', jsonb_build_object(
+        'id', v_prompt.id,
+        'prompt_text', v_prompt.prompt_text,
+        'numeric_value', v_prompt.numeric_value,
+        'category', v_prompt.category
+      ),
+      'used_prompt_ids', jsonb_build_array(v_prompt.id)
+    );
+
+    UPDATE game_sessions
+    SET status = 'playing',
+        turn_order = v_player_ids,
+        current_turn_index = 0,
+        turn_deadline = v_deadline,
+        game_config = v_new_config
+    WHERE id = p_session_id;
+
+    RETURN jsonb_build_object(
+      'success', true,
+      'status', 'playing',
+      'turn_deadline', v_deadline,
+      'game_config', v_new_config
+    );
   ELSE
     -- Word chain game logic (30 seconds turn timer)
     v_deadline := now() + interval '30 seconds';
@@ -419,6 +508,7 @@ DECLARE
   v_i int;
   v_candidate_id uuid;
   v_is_elim boolean;
+  v_winner_rounds int;
 BEGIN
   -- 1. Lock session row
   SELECT * INTO v_session
@@ -505,6 +595,18 @@ BEGIN
 
   -- If 1 or fewer players, check if finished
   IF v_active_players_count <= 1 AND v_turn_order_len > 1 THEN
+    -- p_player_id is the sole remaining active player (v_active_players_count
+    -- counts them), so they're the winner - award Game Night points: +3 for
+    -- winning, +1 per round survived (words they personally landed this game,
+    -- including this final one)
+    SELECT count(*) INTO v_winner_rounds
+    FROM jsonb_array_elements(v_new_used_words) elem
+    WHERE (elem ->> 'player_id') = p_player_id::text;
+
+    UPDATE game_players
+    SET total_score = total_score + 3 + v_winner_rounds
+    WHERE id = p_player_id;
+
     UPDATE game_sessions
     SET used_words = v_new_used_words,
         last_letter = v_last_char,
@@ -547,6 +649,275 @@ BEGIN
     'last_letter', v_last_char,
     'current_turn_index', v_next_index,
     'turn_deadline', now() + interval '30 seconds'
+  );
+END;
+$$;
+
+
+-- Function: Submit Guess (Higher or Lower Engine: atomic comparison,
+-- elimination-on-wrong-guess, advancing turn - mirrors submit_word's turn
+-- verification and elimination/finish handling, minus word validation)
+CREATE OR REPLACE FUNCTION submit_guess(
+  p_session_id uuid,
+  p_player_id uuid,
+  p_guess text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_session game_sessions%ROWTYPE;
+  v_player game_players%ROWTYPE;
+  v_expected_player_id uuid;
+  v_turn_order_len int;
+  v_config jsonb;
+  v_current_prompt jsonb;
+  v_current_value int;
+  v_used_ids jsonb;
+  v_new_prompt game_prompts%ROWTYPE;
+  v_is_correct boolean;
+  v_guess_entry jsonb;
+  v_new_history jsonb;
+  v_active_players_count int;
+  v_winner_id uuid;
+  v_winner_rounds int;
+  v_next_index int;
+  v_i int;
+  v_candidate_id uuid;
+  v_is_elim boolean;
+  v_deadline timestamptz;
+BEGIN
+  IF p_guess NOT IN ('higher', 'lower') THEN
+    RAISE EXCEPTION 'Guess must be "higher" or "lower"';
+  END IF;
+
+  -- 1. Lock session row
+  SELECT * INTO v_session
+  FROM game_sessions
+  WHERE id = p_session_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Session not found';
+  END IF;
+
+  IF v_session.status <> 'playing' THEN
+    RAISE EXCEPTION 'Game is not currently active';
+  END IF;
+
+  -- 2. Verify submitting player exists and is part of session
+  SELECT * INTO v_player
+  FROM game_players
+  WHERE id = p_player_id AND session_id = p_session_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Player not found in this session';
+  END IF;
+
+  IF v_player.is_eliminated THEN
+    RAISE EXCEPTION 'Player is already eliminated';
+  END IF;
+
+  -- 3. Verify it is this player's turn
+  v_turn_order_len := jsonb_array_length(v_session.turn_order);
+  IF v_turn_order_len = 0 THEN
+    RAISE EXCEPTION 'No turn order set';
+  END IF;
+
+  v_expected_player_id := (v_session.turn_order ->> v_session.current_turn_index)::uuid;
+  IF v_expected_player_id <> p_player_id THEN
+    RAISE EXCEPTION 'It is not your turn';
+  END IF;
+
+  -- 4. Read the current reference number being compared against
+  v_config := v_session.game_config;
+  v_current_prompt := v_config -> 'current_prompt';
+  IF v_current_prompt IS NULL THEN
+    RAISE EXCEPTION 'No active number for this round';
+  END IF;
+  v_current_value := (v_current_prompt ->> 'numeric_value')::int;
+
+  -- 5. Pick a new random prompt from the same category, excluding every
+  -- prompt already shown this game (current_prompt's own id is already in
+  -- used_prompt_ids from when it became current, so this also guarantees
+  -- "different from current")
+  v_used_ids := COALESCE(v_config -> 'used_prompt_ids', '[]'::jsonb);
+
+  SELECT * INTO v_new_prompt
+  FROM game_prompts
+  WHERE engine = 'higher_lower'
+    AND category = v_session.category
+    AND NOT (v_used_ids @> to_jsonb(id::text))
+  ORDER BY random()
+  LIMIT 1;
+
+  -- If every prompt in category has been shown, cycle and allow any from category
+  IF v_new_prompt.id IS NULL THEN
+    SELECT * INTO v_new_prompt
+    FROM game_prompts
+    WHERE engine = 'higher_lower' AND category = v_session.category
+    ORDER BY random()
+    LIMIT 1;
+  END IF;
+
+  -- Fallback to any higher_lower prompt at all
+  IF v_new_prompt.id IS NULL THEN
+    SELECT * INTO v_new_prompt
+    FROM game_prompts
+    WHERE engine = 'higher_lower'
+    ORDER BY random()
+    LIMIT 1;
+  END IF;
+
+  IF v_new_prompt.id IS NULL THEN
+    RAISE EXCEPTION 'No higher_lower prompts available';
+  END IF;
+
+  -- 6. Determine correctness. An exact tie counts as neither "higher" nor
+  -- "lower" (resolves as incorrect either way) rather than re-drawing, which
+  -- would risk looping against a small/duplicate-valued prompt pool -
+  -- vanishingly unlikely with the seeded data anyway.
+  IF v_new_prompt.numeric_value > v_current_value THEN
+    v_is_correct := (p_guess = 'higher');
+  ELSIF v_new_prompt.numeric_value < v_current_value THEN
+    v_is_correct := (p_guess = 'lower');
+  ELSE
+    v_is_correct := false;
+  END IF;
+
+  v_guess_entry := jsonb_build_object(
+    'player_id', p_player_id,
+    'player_name', v_player.display_name,
+    'guess', p_guess,
+    'correct', v_is_correct,
+    'previous_prompt_text', v_current_prompt ->> 'prompt_text',
+    'previous_value', v_current_value,
+    'new_prompt_text', v_new_prompt.prompt_text,
+    'new_value', v_new_prompt.numeric_value,
+    'guessed_at', now()
+  );
+
+  v_new_history := COALESCE(v_config -> 'guess_history', '[]'::jsonb) || jsonb_build_array(v_guess_entry);
+  v_used_ids := v_used_ids || to_jsonb(v_new_prompt.id::text);
+
+  -- The new prompt becomes the reference for the next guess regardless of
+  -- whether this one was right - the eliminated-and-game-continues case still
+  -- needs the next player to see the freshly revealed number, not the stale one
+  v_config := jsonb_build_object(
+    'current_prompt', jsonb_build_object(
+      'id', v_new_prompt.id,
+      'prompt_text', v_new_prompt.prompt_text,
+      'numeric_value', v_new_prompt.numeric_value,
+      'category', v_new_prompt.category
+    ),
+    'last_guess', v_guess_entry,
+    'guess_history', v_new_history,
+    'used_prompt_ids', v_used_ids
+  );
+
+  IF NOT v_is_correct THEN
+    -- Wrong guess: eliminate the player (same pattern as handle_timeout)
+    UPDATE game_players SET is_eliminated = true WHERE id = p_player_id;
+
+    SELECT count(*) INTO v_active_players_count
+    FROM game_players
+    WHERE session_id = p_session_id AND is_eliminated = false;
+
+    IF v_active_players_count <= 1 AND v_turn_order_len > 1 THEN
+      -- Award the sole remaining active player (if any) Game Night points:
+      -- +3 for winning, +1 per round survived (correct guesses they
+      -- personally landed this game)
+      SELECT id INTO v_winner_id
+      FROM game_players
+      WHERE session_id = p_session_id AND is_eliminated = false
+      LIMIT 1;
+
+      IF v_winner_id IS NOT NULL THEN
+        SELECT count(*) INTO v_winner_rounds
+        FROM jsonb_array_elements(v_new_history) elem
+        WHERE (elem ->> 'player_id') = v_winner_id::text AND (elem ->> 'correct')::boolean = true;
+
+        UPDATE game_players
+        SET total_score = total_score + 3 + v_winner_rounds
+        WHERE id = v_winner_id;
+      END IF;
+
+      UPDATE game_sessions
+      SET status = 'finished',
+          turn_deadline = NULL,
+          game_config = v_config
+      WHERE id = p_session_id;
+
+      RETURN jsonb_build_object(
+        'success', true,
+        'status', 'finished',
+        'correct', false,
+        'game_config', v_config
+      );
+    END IF;
+
+    -- Game continues: advance turn to next active player
+    v_next_index := v_session.current_turn_index;
+    FOR v_i IN 1..v_turn_order_len LOOP
+      v_next_index := (v_next_index + 1) % v_turn_order_len;
+      v_candidate_id := (v_session.turn_order ->> v_next_index)::uuid;
+
+      SELECT is_eliminated INTO v_is_elim
+      FROM game_players
+      WHERE id = v_candidate_id AND session_id = p_session_id;
+
+      IF v_is_elim IS FALSE THEN
+        EXIT;
+      END IF;
+    END LOOP;
+
+    v_deadline := now() + interval '20 seconds';
+
+    UPDATE game_sessions
+    SET current_turn_index = v_next_index,
+        turn_deadline = v_deadline,
+        game_config = v_config
+    WHERE id = p_session_id;
+
+    RETURN jsonb_build_object(
+      'success', true,
+      'correct', false,
+      'current_turn_index', v_next_index,
+      'turn_deadline', v_deadline,
+      'game_config', v_config
+    );
+  END IF;
+
+  -- 7. Correct guess: nobody eliminated, advance turn to next active player
+  v_next_index := v_session.current_turn_index;
+  FOR v_i IN 1..v_turn_order_len LOOP
+    v_next_index := (v_next_index + 1) % v_turn_order_len;
+    v_candidate_id := (v_session.turn_order ->> v_next_index)::uuid;
+
+    SELECT is_eliminated INTO v_is_elim
+    FROM game_players
+    WHERE id = v_candidate_id AND session_id = p_session_id;
+
+    IF v_is_elim IS FALSE THEN
+      EXIT;
+    END IF;
+  END LOOP;
+
+  v_deadline := now() + interval '20 seconds';
+
+  UPDATE game_sessions
+  SET current_turn_index = v_next_index,
+      turn_deadline = v_deadline,
+      game_config = v_config
+  WHERE id = p_session_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'correct', true,
+    'current_turn_index', v_next_index,
+    'turn_deadline', v_deadline,
+    'game_config', v_config
   );
 END;
 $$;
@@ -940,6 +1311,9 @@ DECLARE
   v_is_elim boolean;
   v_i int;
   v_config jsonb;
+  v_winner_id uuid;
+  v_winner_rounds int;
+  v_deadline_interval interval;
 BEGIN
   -- Lock session
   SELECT * INTO v_session
@@ -976,14 +1350,19 @@ BEGIN
     RETURN jsonb_build_object('success', true, 'phase', 'revealed');
   END IF;
 
-  -- Word chain timeout handling (30s)
+  -- Word Chain / Higher-or-Lower timeout handling: both are elimination-based,
+  -- turn-order games where a timeout eliminates whoever's turn it was, just
+  -- like a wrong submission would. word_chain runs a 30s timer and scores
+  -- survived rounds off used_words; higher_lower runs a 20s timer (like
+  -- trivia/vote_reveal) and scores survived rounds off its own guess_history.
   v_turn_order_len := jsonb_array_length(v_session.turn_order);
   IF v_turn_order_len = 0 THEN
     RETURN jsonb_build_object('success', false, 'message', 'No players in turn order');
   END IF;
 
   v_expected_player_id := (v_session.turn_order ->> v_session.current_turn_index)::uuid;
-  
+  v_deadline_interval := CASE WHEN v_session.game_type = 'higher_lower' THEN interval '20 seconds' ELSE interval '30 seconds' END;
+
   -- If expected player matches timed out player
   IF p_timed_out_player_id IS NULL OR v_expected_player_id = p_timed_out_player_id THEN
     -- Mark player eliminated
@@ -998,6 +1377,30 @@ BEGIN
 
     -- If 1 or 0 remaining active players (and more than 1 started), game is finished!
     IF v_active_count <= 1 AND v_turn_order_len > 1 THEN
+      -- Award the sole remaining active player (if any - a double-elimination
+      -- edge case can leave zero) Game Night points: +3 for winning, +1 per
+      -- round survived
+      SELECT id INTO v_winner_id
+      FROM game_players
+      WHERE session_id = p_session_id AND is_eliminated = false
+      LIMIT 1;
+
+      IF v_winner_id IS NOT NULL THEN
+        IF v_session.game_type = 'higher_lower' THEN
+          SELECT count(*) INTO v_winner_rounds
+          FROM jsonb_array_elements(COALESCE(v_session.game_config -> 'guess_history', '[]'::jsonb)) elem
+          WHERE (elem ->> 'player_id') = v_winner_id::text AND (elem ->> 'correct')::boolean = true;
+        ELSE
+          SELECT count(*) INTO v_winner_rounds
+          FROM jsonb_array_elements(v_session.used_words) elem
+          WHERE (elem ->> 'player_id') = v_winner_id::text;
+        END IF;
+
+        UPDATE game_players
+        SET total_score = total_score + 3 + v_winner_rounds
+        WHERE id = v_winner_id;
+      END IF;
+
       UPDATE game_sessions
       SET status = 'finished',
           turn_deadline = NULL
@@ -1025,17 +1428,17 @@ BEGIN
       END IF;
     END LOOP;
 
-    -- Advance turn and reset 30-second deadline
+    -- Advance turn and reset the deadline
     UPDATE game_sessions
     SET current_turn_index = v_next_index,
-        turn_deadline = now() + interval '30 seconds'
+        turn_deadline = now() + v_deadline_interval
     WHERE id = p_session_id;
 
     RETURN jsonb_build_object(
       'success', true,
       'eliminated_player_id', v_expected_player_id,
       'current_turn_index', v_next_index,
-      'turn_deadline', now() + interval '30 seconds'
+      'turn_deadline', now() + v_deadline_interval
     );
   END IF;
 
@@ -1052,7 +1455,24 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_game_type text;
 BEGIN
+  SELECT game_type INTO v_game_type FROM game_sessions WHERE id = p_session_id;
+
+  -- Trivia's round-set is ending here (host returns to lobby / plays again) -
+  -- roll each player's per-game `score` into the persistent Game Night
+  -- `total_score` before it gets zeroed below. word_chain already awarded its
+  -- winner at the moment the game finished (see submit_word/handle_timeout);
+  -- vote_reveal/most_likely are non-competitive and never touch total_score.
+  -- total_score itself is never reset here - it only resets by leaving the
+  -- room and starting a fresh session.
+  IF v_game_type = 'trivia' THEN
+    UPDATE game_players
+    SET total_score = total_score + score
+    WHERE session_id = p_session_id;
+  END IF;
+
   -- Reset session
   UPDATE game_sessions
   SET status = 'lobby',
@@ -1066,7 +1486,8 @@ BEGIN
 
   -- Reset players (score is only ever incremented by submit_answer, so
   -- zeroing it here is a no-op for word_chain/vote_reveal/most_likely
-  -- sessions - it's always already 0 for them)
+  -- sessions - it's always already 0 for them). total_score is deliberately
+  -- left untouched.
   UPDATE game_players
   SET is_eliminated = false,
       score = 0
