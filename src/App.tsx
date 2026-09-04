@@ -72,8 +72,9 @@ function MainContent() {
         {renderView()}
       </main>
 
-      <footer className="relative z-10 py-6 border-t border-slate-900 text-center text-[11px] text-slate-500">
-        Multiplayer Word Chain • Powered by React, Supabase & Realtime
+      <footer className="relative z-10 py-6 border-t border-slate-900 text-center text-[11px] text-slate-500 space-y-1">
+        <div>Multiplayer Word Chain • Powered by React, Supabase & Realtime</div>
+        <div className="italic text-slate-600">Made by lebrondeno</div>
       </footer>
     </div>
   );
