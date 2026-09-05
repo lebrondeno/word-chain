@@ -2,7 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { CATEGORIES } from '../data';
-import { VOTE_REVEAL_CATEGORIES, TRIVIA_CATEGORIES, HIGHER_LOWER_CATEGORIES, GAME_TYPES } from '../data/prompts';
+import {
+  VOTE_REVEAL_CATEGORIES,
+  TRIVIA_CATEGORIES,
+  HIGHER_LOWER_CATEGORIES,
+  HIGHER_LOWER_DIFFICULTIES,
+  GAME_TYPES,
+} from '../data/prompts';
 import { sanitizeRoomCode } from '../lib/roomCode';
 import { Play, UserPlus, Sparkles, AlertCircle, ArrowRight, ShieldCheck, UserCheck } from 'lucide-react';
 
@@ -22,6 +28,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
   const [roomCode, setRoomCode] = useState(initialRoomCode || '');
   const [gameType, setGameType] = useState<string>('word_chain');
   const [category, setCategory] = useState<string>('cities');
+  const [difficulty, setDifficulty] = useState<string>('medium');
   // Set when joinGame finds an existing (non-eliminated) player with the same
   // name already in the room - lets the player choose to reconnect to that
   // row instead of silently creating a duplicate, or confirm they're a
@@ -51,7 +58,8 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
     } else if (typeId === 'trivia') {
       setCategory('general_knowledge');
     } else if (typeId === 'higher_lower') {
-      setCategory('population');
+      setCategory('random_numbers');
+      setDifficulty('medium');
     } else {
       setCategory('cities');
     }
@@ -63,7 +71,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
       setError('Please enter a display name');
       return;
     }
-    await createGame(displayName.trim(), category, gameType);
+    await createGame(displayName.trim(), category, gameType, category === 'random_numbers' ? difficulty : undefined);
   };
 
   const handleJoin = async (e: React.FormEvent) => {
@@ -345,6 +353,35 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                     })}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Difficulty Picker - only the generated 'random_numbers'
+                category has a tunable spread; every other higher_lower
+                category's variance comes from its real-world data */}
+            {isHigherLower && category === 'random_numbers' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Difficulty</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {HIGHER_LOWER_DIFFICULTIES.map((diff) => {
+                    const isSelected = difficulty === diff.id;
+                    return (
+                      <button
+                        type="button"
+                        key={diff.id}
+                        onClick={() => setDifficulty(diff.id)}
+                        className={`p-3 rounded-xl border text-left transition ${
+                          isSelected
+                            ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
+                            : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="font-semibold text-xs text-white">{diff.name}</div>
+                        <div className="text-[10px] text-slate-400 truncate">{diff.description}</div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

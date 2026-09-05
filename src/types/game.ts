@@ -26,23 +26,41 @@ export interface VoteRevealPrompt {
   // per-player server-authoritative view - see TriviaGameView for the
   // fairness trade-off this implies.
   correct_answer?: string;
-  // 'higher_lower' engine only: the actual number this prompt represents,
-  // compared against the next prompt's numeric_value to grade a guess.
-  numeric_value?: number;
 }
+
+// 'higher_lower' engine only: the reference value being compared against,
+// shaped after the HigherLowerProvider interface's { id, label, value } -
+// see src/lib/higherLowerProviders. id is null for the generated provider
+// ('random_numbers'), which draws from no finite pool and so has nothing to
+// dedupe against; every cached-table category (population, football_stats,
+// or any future seed-script-populated category) carries its game_prompts row id.
+export interface HigherLowerCurrentValue {
+  id: string | null;
+  label: string;
+  value: number;
+  category?: string;
+}
+
+// 'higher_lower' engine only: what tie_behavior does when the freshly-drawn
+// value exactly equals the current value. Read from game_config.tie_behavior
+// (defaults to 'push' if absent) so a future difficulty mode can change the
+// rule without an RPC change - see submit_guess in supabase/schema.sql.
+export type HigherLowerTieBehavior = 'push' | 'elimination' | 'auto_correct';
 
 // 'higher_lower' engine only: one player's guess and its outcome, appended
 // to game_config.guess_history each turn (and mirrored into last_guess for
 // convenience) so every client can render the same reveal off realtime state.
+// 'push' means a tie under tie_behavior: 'push' - not counted as right or
+// wrong, the turn still passes and the tied value becomes the new current.
 export interface HigherLowerGuess {
   player_id: string;
   player_name: string;
   guess: 'higher' | 'lower';
-  correct: boolean;
-  previous_prompt_text: string;
+  outcome: 'correct' | 'incorrect' | 'push';
   previous_value: number;
-  new_prompt_text: string;
+  previous_label: string;
   new_value: number;
+  new_label: string;
   guessed_at?: string;
 }
 
@@ -52,8 +70,10 @@ export interface GameConfig {
   used_prompt_ids?: string[];
   voting_phase?: 'voting' | 'revealed'; // vote_reveal & most_likely
   phase?: 'answering' | 'revealed'; // trivia
+  current_value?: HigherLowerCurrentValue | null; // higher_lower
   last_guess?: HigherLowerGuess | null; // higher_lower
   guess_history?: HigherLowerGuess[]; // higher_lower
+  tie_behavior?: HigherLowerTieBehavior; // higher_lower
   [key: string]: unknown;
 }
 
@@ -69,6 +89,10 @@ export interface GameSession {
   last_letter: string | null;
   turn_deadline: string | null; // ISO timestamp
   game_config?: GameConfig;
+  // 'higher_lower' engine only: host-selected difficulty for the
+  // 'random_numbers' category ('easy' | 'medium' | 'hard' | 'expert').
+  // Meaningless for every other game type/category; defaults to 'medium'.
+  difficulty: string;
   created_at: string;
 }
 
@@ -94,6 +118,12 @@ export interface GamePrompt {
   options: [string, string] | string[] | null;
   correct_answer?: string | null;
   numeric_value?: number | null;
+  // 'higher_lower' engine only: where numeric_value came from (e.g.
+  // 'restcountries_api', 'manual') and when it was last refreshed. Not read
+  // by any RPC yet - reserved for a future "refresh this dataset" action,
+  // per HigherLowerProvider.refreshDataset.
+  source?: string | null;
+  last_updated?: string | null;
   created_at?: string;
 }
 

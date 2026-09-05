@@ -7,6 +7,7 @@ import {
   MOST_LIKELY_CATEGORIES,
   TRIVIA_CATEGORIES,
   HIGHER_LOWER_CATEGORIES,
+  HIGHER_LOWER_DIFFICULTIES,
   GAME_TYPES,
 } from '../data/prompts';
 import { Play, Copy, Check, Share2, Crown, Users, AlertCircle, Settings2 } from 'lucide-react';
@@ -40,7 +41,7 @@ export const LobbyView: React.FC = () => {
     : isTrivia
     ? TRIVIA_CATEGORIES[session.category] || TRIVIA_CATEGORIES['general_knowledge']
     : isHigherLower
-    ? HIGHER_LOWER_CATEGORIES[session.category] || HIGHER_LOWER_CATEGORIES['population']
+    ? HIGHER_LOWER_CATEGORIES[session.category] || HIGHER_LOWER_CATEGORIES['random_numbers']
     : CATEGORIES[session.category] || CATEGORIES['cities'];
 
   const handleCopyLink = () => {
@@ -64,16 +65,23 @@ export const LobbyView: React.FC = () => {
         : newType === 'trivia'
         ? 'general_knowledge'
         : newType === 'higher_lower'
-        ? 'population'
+        ? 'random_numbers'
         : 'cities';
-    await setGameSettings(newType, defaultCat);
+    await setGameSettings(newType, defaultCat, newType === 'higher_lower' ? 'medium' : undefined);
     setUpdatingSettings(false);
   };
 
   const handleCategoryChange = async (newCategory: string) => {
     if (!isHost || updatingSettings || newCategory === session.category) return;
     setUpdatingSettings(true);
-    await setGameSettings(gameType, newCategory);
+    await setGameSettings(gameType, newCategory, newCategory === 'random_numbers' ? 'medium' : undefined);
+    setUpdatingSettings(false);
+  };
+
+  const handleDifficultyChange = async (newDifficulty: string) => {
+    if (!isHost || updatingSettings || newDifficulty === session.difficulty) return;
+    setUpdatingSettings(true);
+    await setGameSettings(gameType, session.category, newDifficulty);
     setUpdatingSettings(false);
   };
 
@@ -344,6 +352,35 @@ export const LobbyView: React.FC = () => {
                     })}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Difficulty Selector - only the generated 'random_numbers'
+                category has a tunable spread */}
+            {isHigherLower && session.category === 'random_numbers' && (
+              <div className="pt-2">
+                <label className="block text-xs font-semibold text-slate-300 mb-2">Difficulty</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {HIGHER_LOWER_DIFFICULTIES.map((diff) => {
+                    const isSelected = (session.difficulty || 'medium') === diff.id;
+                    return (
+                      <button
+                        key={diff.id}
+                        type="button"
+                        onClick={() => handleDifficultyChange(diff.id)}
+                        disabled={updatingSettings}
+                        className={`p-3 rounded-xl border text-left transition ${
+                          isSelected
+                            ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="font-semibold text-xs text-white">{diff.name}</div>
+                        <div className="text-[10px] text-slate-400 truncate">{diff.description}</div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

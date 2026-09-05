@@ -169,7 +169,12 @@ async function main() {
         '(the "service_role" secret key, NOT the anon key) before running this script.\n' +
         'Never commit this key or use it in client-side code.'
     );
-    process.exit(1);
+    // process.exitCode (not process.exit()) - forcing an immediate exit here
+    // races pending fetch/libuv handles and crashes with a libuv assertion
+    // on Windows instead of exiting cleanly. Setting exitCode and returning
+    // lets Node drain the event loop and exit on its own.
+    process.exitCode = 1;
+    return;
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -221,7 +226,8 @@ async function main() {
           '\nInsert failed: the "correct_answer" column is missing from game_prompts.\n' +
             'Run the updated supabase/schema.sql in the Supabase SQL Editor first, then re-run this script.'
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
       throw error;
     }
@@ -252,5 +258,5 @@ async function main() {
 
 main().catch((err) => {
   console.error('\nSeed script failed:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });

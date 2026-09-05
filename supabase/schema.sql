@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS game_sessions (
 -- If game_config column doesn't exist yet on existing table, add it
 ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS game_config jsonb NOT NULL DEFAULT '{}'::jsonb;
 
+-- 'higher_lower' engine only: host-selected difficulty for the
+-- 'random_numbers' category (controls the generated-provider's spread in
+-- start_game/submit_guess). Meaningless for every other game type/category,
+-- left at its default.
+ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS difficulty text NOT NULL DEFAULT 'medium';
+
 CREATE TABLE IF NOT EXISTS game_players (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id uuid REFERENCES game_sessions(id) ON DELETE CASCADE,
@@ -62,6 +68,14 @@ ALTER TABLE game_prompts ADD COLUMN IF NOT EXISTS correct_answer text;
 -- null for this engine - the comparison is against numeric_value, not a
 -- fixed-choice list.
 ALTER TABLE game_prompts ADD COLUMN IF NOT EXISTS numeric_value int;
+
+-- 'higher_lower' engine only: where a row's numeric_value came from (e.g.
+-- 'restcountries_api', 'manual') and when it was last refreshed. Not read by
+-- any RPC yet - reserved for future staleness tracking / a "refresh this
+-- dataset" admin action, per the HigherLowerProvider.refreshDataset contract
+-- in src/lib/higherLowerProviders.
+ALTER TABLE game_prompts ADD COLUMN IF NOT EXISTS source text;
+ALTER TABLE game_prompts ADD COLUMN IF NOT EXISTS last_updated timestamptz DEFAULT now();
 
 -- Dedupe target for scripts/seed-trivia.ts, which upserts with
 -- ON CONFLICT (prompt_text) DO NOTHING so repeat runs never insert the same
@@ -235,24 +249,34 @@ ON CONFLICT (id) DO NOTHING;
 -- the guess itself, not stumping people. options stays null throughout;
 -- numeric_value is the only thing compared.
 
-INSERT INTO game_prompts (id, engine, category, prompt_text, options, numeric_value) VALUES
-  ('11111111-0006-4000-8000-000000000001', 'higher_lower', 'population', 'Tokyo, Japan''s population', null, 14000000),
-  ('11111111-0006-4000-8000-000000000002', 'higher_lower', 'population', 'Lagos, Nigeria''s population', null, 15000000),
-  ('11111111-0006-4000-8000-000000000003', 'higher_lower', 'population', 'Cairo, Egypt''s population', null, 10000000),
-  ('11111111-0006-4000-8000-000000000004', 'higher_lower', 'population', 'Mumbai, India''s population', null, 12500000),
-  ('11111111-0006-4000-8000-000000000005', 'higher_lower', 'population', 'London, United Kingdom''s population', null, 9000000),
-  ('11111111-0006-4000-8000-000000000006', 'higher_lower', 'population', 'New York City, USA''s population', null, 8300000),
-  ('11111111-0006-4000-8000-000000000007', 'higher_lower', 'population', 'Nairobi, Kenya''s population', null, 4400000),
-  ('11111111-0006-4000-8000-000000000008', 'higher_lower', 'population', 'Paris, France''s population', null, 2100000),
+INSERT INTO game_prompts (id, engine, category, prompt_text, options, numeric_value, source) VALUES
+  ('11111111-0006-4000-8000-000000000001', 'higher_lower', 'population', 'Tokyo, Japan''s population', null, 14000000, 'manual'),
+  ('11111111-0006-4000-8000-000000000002', 'higher_lower', 'population', 'Lagos, Nigeria''s population', null, 15000000, 'manual'),
+  ('11111111-0006-4000-8000-000000000003', 'higher_lower', 'population', 'Cairo, Egypt''s population', null, 10000000, 'manual'),
+  ('11111111-0006-4000-8000-000000000004', 'higher_lower', 'population', 'Mumbai, India''s population', null, 12500000, 'manual'),
+  ('11111111-0006-4000-8000-000000000005', 'higher_lower', 'population', 'London, United Kingdom''s population', null, 9000000, 'manual'),
+  ('11111111-0006-4000-8000-000000000006', 'higher_lower', 'population', 'New York City, USA''s population', null, 8300000, 'manual'),
+  ('11111111-0006-4000-8000-000000000007', 'higher_lower', 'population', 'Nairobi, Kenya''s population', null, 4400000, 'manual'),
+  ('11111111-0006-4000-8000-000000000008', 'higher_lower', 'population', 'Paris, France''s population', null, 2100000, 'manual'),
 
-  ('11111111-0007-4000-8000-000000000001', 'higher_lower', 'football_stats', 'Cristiano Ronaldo''s international caps', null, 215),
-  ('11111111-0007-4000-8000-000000000002', 'higher_lower', 'football_stats', 'Lionel Messi''s international caps', null, 190),
-  ('11111111-0007-4000-8000-000000000003', 'higher_lower', 'football_stats', 'Iker Casillas'' international caps', null, 167),
-  ('11111111-0007-4000-8000-000000000004', 'higher_lower', 'football_stats', 'Xavi Hernandez''s international caps', null, 133),
-  ('11111111-0007-4000-8000-000000000005', 'higher_lower', 'football_stats', 'Paolo Maldini''s international caps', null, 126),
-  ('11111111-0007-4000-8000-000000000006', 'higher_lower', 'football_stats', 'Zinedine Zidane''s international caps', null, 108),
-  ('11111111-0007-4000-8000-000000000007', 'higher_lower', 'football_stats', 'Ryan Giggs'' international caps', null, 64)
+  ('11111111-0007-4000-8000-000000000001', 'higher_lower', 'football_stats', 'Cristiano Ronaldo''s international caps', null, 215, 'manual'),
+  ('11111111-0007-4000-8000-000000000002', 'higher_lower', 'football_stats', 'Lionel Messi''s international caps', null, 190, 'manual'),
+  ('11111111-0007-4000-8000-000000000003', 'higher_lower', 'football_stats', 'Iker Casillas'' international caps', null, 167, 'manual'),
+  ('11111111-0007-4000-8000-000000000004', 'higher_lower', 'football_stats', 'Xavi Hernandez''s international caps', null, 133, 'manual'),
+  ('11111111-0007-4000-8000-000000000005', 'higher_lower', 'football_stats', 'Paolo Maldini''s international caps', null, 126, 'manual'),
+  ('11111111-0007-4000-8000-000000000006', 'higher_lower', 'football_stats', 'Zinedine Zidane''s international caps', null, 108, 'manual'),
+  ('11111111-0007-4000-8000-000000000007', 'higher_lower', 'football_stats', 'Ryan Giggs'' international caps', null, 64, 'manual')
 ON CONFLICT (id) DO NOTHING;
+
+-- Backfill source for rows inserted by an earlier run of this file (before
+-- the source/last_updated columns existed) - the INSERT above only writes
+-- new rows, ON CONFLICT DO NOTHING skips ones already present
+UPDATE game_prompts SET source = 'manual' WHERE engine = 'higher_lower' AND source IS NULL;
+
+-- 'random_numbers' is the generated-provider category - values are computed
+-- live in start_game/submit_guess (see src/lib/higherLowerProviders/
+-- generatedProvider.ts for the client-fallback mirror), so it has no rows
+-- here and never queries game_prompts at all.
 
 
 -- ==========================================================
@@ -275,6 +299,7 @@ DECLARE
   v_prompt game_prompts%ROWTYPE;
   v_options jsonb;
   v_new_config jsonb;
+  v_initial_value int;
 BEGIN
   -- Lock the session row for update
   SELECT * INTO v_session
@@ -318,6 +343,13 @@ BEGIN
       WHERE engine = v_session.game_type
       ORDER BY random()
       LIMIT 1;
+    END IF;
+
+    -- No prompts at all for this engine (not just this category) - surface an
+    -- explicit error instead of proceeding with a null prompt_text/id, which
+    -- would silently start the game on a broken round
+    IF v_prompt.id IS NULL THEN
+      RETURN jsonb_build_object('success', false, 'error', 'no_prompts_available');
     END IF;
 
     -- A null options column means "vote for a player" (most_likely): build the
@@ -376,7 +408,7 @@ BEGIN
     END IF;
 
     IF v_prompt.id IS NULL THEN
-      RAISE EXCEPTION 'No trivia prompts available - run scripts/seed-trivia.ts first';
+      RETURN jsonb_build_object('success', false, 'error', 'no_prompts_available');
     END IF;
 
     v_deadline := now() + interval '20 seconds';
@@ -409,39 +441,63 @@ BEGIN
       'game_config', v_new_config
     );
   ELSIF v_session.game_type = 'higher_lower' THEN
-    -- Higher or Lower: pick a random starting prompt matching category as the
-    -- initial reference number, same turn-order/elimination shape as word
-    -- chain but with a 20s timer (like trivia/vote_reveal) instead of 30s
-    SELECT * INTO v_prompt
-    FROM game_prompts
-    WHERE engine = 'higher_lower' AND category = v_session.category
-    ORDER BY random()
-    LIMIT 1;
+    -- Higher or Lower: same turn-order/elimination shape as word chain, 20s
+    -- timer like trivia/vote_reveal. Two data sources, chosen purely by
+    -- category (mirrors the HigherLowerProvider split in
+    -- src/lib/higherLowerProviders - adding a new cached-table category
+    -- later needs no change here, only a new seed script):
+    --   'random_numbers' -> generated in-SQL, spread by v_session.difficulty
+    --   anything else     -> pulled from the game_prompts cache (population,
+    --                        football_stats, or any future hand/seed-script
+    --                        -populated category)
+    IF v_session.category = 'random_numbers' THEN
+      -- Starting value has no "current" to spread from yet - pick a round
+      -- base in a presentable range; the difficulty-aware spread only
+      -- kicks in from submit_guess's second value onward
+      v_initial_value := 50 + floor(random() * 49950)::int;
 
-    -- Fallback to any higher_lower prompt if category is empty
-    IF v_prompt.id IS NULL THEN
+      v_new_config := jsonb_build_object(
+        'current_value', jsonb_build_object(
+          'id', null,
+          'label', 'Random Number',
+          'value', v_initial_value,
+          'category', 'random_numbers'
+        ),
+        'tie_behavior', 'push'
+      );
+    ELSE
       SELECT * INTO v_prompt
       FROM game_prompts
-      WHERE engine = 'higher_lower'
+      WHERE engine = 'higher_lower' AND category = v_session.category
       ORDER BY random()
       LIMIT 1;
-    END IF;
 
-    IF v_prompt.id IS NULL THEN
-      RAISE EXCEPTION 'No higher_lower prompts available';
+      -- Fallback to any higher_lower prompt if category is empty
+      IF v_prompt.id IS NULL THEN
+        SELECT * INTO v_prompt
+        FROM game_prompts
+        WHERE engine = 'higher_lower'
+        ORDER BY random()
+        LIMIT 1;
+      END IF;
+
+      IF v_prompt.id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', 'no_prompts_available');
+      END IF;
+
+      v_new_config := jsonb_build_object(
+        'current_value', jsonb_build_object(
+          'id', v_prompt.id,
+          'label', v_prompt.prompt_text,
+          'value', v_prompt.numeric_value,
+          'category', v_prompt.category
+        ),
+        'used_prompt_ids', jsonb_build_array(v_prompt.id),
+        'tie_behavior', 'push'
+      );
     END IF;
 
     v_deadline := now() + interval '20 seconds';
-
-    v_new_config := jsonb_build_object(
-      'current_prompt', jsonb_build_object(
-        'id', v_prompt.id,
-        'prompt_text', v_prompt.prompt_text,
-        'numeric_value', v_prompt.numeric_value,
-        'category', v_prompt.category
-      ),
-      'used_prompt_ids', jsonb_build_array(v_prompt.id)
-    );
 
     UPDATE game_sessions
     SET status = 'playing',
@@ -672,11 +728,20 @@ DECLARE
   v_expected_player_id uuid;
   v_turn_order_len int;
   v_config jsonb;
-  v_current_prompt jsonb;
+  v_current_value_obj jsonb;
   v_current_value int;
+  v_category text;
+  v_difficulty text;
+  v_spread numeric;
   v_used_ids jsonb;
   v_new_prompt game_prompts%ROWTYPE;
-  v_is_correct boolean;
+  v_next_value int;
+  v_next_label text;
+  v_next_id text;
+  v_tie_behavior text;
+  v_is_tie boolean;
+  v_outcome text;
+  v_eliminate boolean;
   v_guess_entry jsonb;
   v_new_history jsonb;
   v_active_players_count int;
@@ -730,94 +795,138 @@ BEGIN
     RAISE EXCEPTION 'It is not your turn';
   END IF;
 
-  -- 4. Read the current reference number being compared against
+  -- 4. Read the current reference value being compared against
   v_config := v_session.game_config;
-  v_current_prompt := v_config -> 'current_prompt';
-  IF v_current_prompt IS NULL THEN
+  v_current_value_obj := v_config -> 'current_value';
+  IF v_current_value_obj IS NULL THEN
     RAISE EXCEPTION 'No active number for this round';
   END IF;
-  v_current_value := (v_current_prompt ->> 'numeric_value')::int;
+  v_current_value := (v_current_value_obj ->> 'value')::int;
+  v_category := v_session.category;
+  v_tie_behavior := COALESCE(v_config ->> 'tie_behavior', 'push');
 
-  -- 5. Pick a new random prompt from the same category, excluding every
-  -- prompt already shown this game (current_prompt's own id is already in
-  -- used_prompt_ids from when it became current, so this also guarantees
-  -- "different from current")
-  v_used_ids := COALESCE(v_config -> 'used_prompt_ids', '[]'::jsonb);
+  -- 5. Source the next value. Purely category-driven, matching the
+  -- HigherLowerProvider split in src/lib/higherLowerProviders - a future
+  -- cached-table category needs no change here, only a new seed script.
+  IF v_category = 'random_numbers' THEN
+    -- Generated provider: spread the next value off the CURRENT value by a
+    -- difficulty-controlled percentage (never the original starting value -
+    -- each step compounds off wherever the sequence currently stands)
+    v_difficulty := v_session.difficulty;
+    v_spread := CASE v_difficulty
+      WHEN 'easy' THEN 0.40
+      WHEN 'hard' THEN 0.08
+      WHEN 'expert' THEN 0.03
+      ELSE 0.20 -- medium / unset default
+    END;
+    v_next_value := GREATEST(1, ROUND(v_current_value * (1 + (random() * 2 - 1) * v_spread))::int);
+    v_next_label := 'Random Number';
+    v_next_id := NULL;
+  ELSE
+    -- Cached-table provider: pull an unused prompt from the same category,
+    -- excluding every prompt already shown this game (current_value's own id
+    -- is already in used_prompt_ids from when it became current)
+    v_used_ids := COALESCE(v_config -> 'used_prompt_ids', '[]'::jsonb);
 
-  SELECT * INTO v_new_prompt
-  FROM game_prompts
-  WHERE engine = 'higher_lower'
-    AND category = v_session.category
-    AND NOT (v_used_ids @> to_jsonb(id::text))
-  ORDER BY random()
-  LIMIT 1;
-
-  -- If every prompt in category has been shown, cycle and allow any from category
-  IF v_new_prompt.id IS NULL THEN
-    SELECT * INTO v_new_prompt
-    FROM game_prompts
-    WHERE engine = 'higher_lower' AND category = v_session.category
-    ORDER BY random()
-    LIMIT 1;
-  END IF;
-
-  -- Fallback to any higher_lower prompt at all
-  IF v_new_prompt.id IS NULL THEN
     SELECT * INTO v_new_prompt
     FROM game_prompts
     WHERE engine = 'higher_lower'
+      AND category = v_category
+      AND NOT (v_used_ids @> to_jsonb(id::text))
     ORDER BY random()
     LIMIT 1;
+
+    -- If every prompt in category has been shown, cycle and allow any from category
+    IF v_new_prompt.id IS NULL THEN
+      SELECT * INTO v_new_prompt
+      FROM game_prompts
+      WHERE engine = 'higher_lower' AND category = v_category
+      ORDER BY random()
+      LIMIT 1;
+    END IF;
+
+    -- Fallback to any higher_lower prompt at all
+    IF v_new_prompt.id IS NULL THEN
+      SELECT * INTO v_new_prompt
+      FROM game_prompts
+      WHERE engine = 'higher_lower'
+      ORDER BY random()
+      LIMIT 1;
+    END IF;
+
+    IF v_new_prompt.id IS NULL THEN
+      RETURN jsonb_build_object('success', false, 'error', 'no_prompts_available');
+    END IF;
+
+    v_next_value := v_new_prompt.numeric_value;
+    v_next_label := v_new_prompt.prompt_text;
+    v_next_id := v_new_prompt.id::text;
+    v_used_ids := v_used_ids || to_jsonb(v_new_prompt.id::text);
   END IF;
 
-  IF v_new_prompt.id IS NULL THEN
-    RAISE EXCEPTION 'No higher_lower prompts available';
-  END IF;
+  -- 6. Determine the outcome. A tie is resolved per tie_behavior rather than
+  -- always counting as wrong, so a future "Hard Mode" can flip the rule via
+  -- game_config alone with no RPC change.
+  v_is_tie := (v_next_value = v_current_value);
 
-  -- 6. Determine correctness. An exact tie counts as neither "higher" nor
-  -- "lower" (resolves as incorrect either way) rather than re-drawing, which
-  -- would risk looping against a small/duplicate-valued prompt pool -
-  -- vanishingly unlikely with the seeded data anyway.
-  IF v_new_prompt.numeric_value > v_current_value THEN
-    v_is_correct := (p_guess = 'higher');
-  ELSIF v_new_prompt.numeric_value < v_current_value THEN
-    v_is_correct := (p_guess = 'lower');
+  IF v_is_tie THEN
+    IF v_tie_behavior = 'elimination' THEN
+      v_outcome := 'incorrect';
+      v_eliminate := true;
+    ELSIF v_tie_behavior = 'auto_correct' THEN
+      v_outcome := 'correct';
+      v_eliminate := false;
+    ELSE
+      -- 'push' (default): not counted as right or wrong, just skip - the
+      -- next player's turn either way, sequence continues from the tied value
+      v_outcome := 'push';
+      v_eliminate := false;
+    END IF;
+  ELSIF (v_next_value > v_current_value AND p_guess = 'higher')
+     OR (v_next_value < v_current_value AND p_guess = 'lower') THEN
+    v_outcome := 'correct';
+    v_eliminate := false;
   ELSE
-    v_is_correct := false;
+    v_outcome := 'incorrect';
+    v_eliminate := true;
   END IF;
 
   v_guess_entry := jsonb_build_object(
     'player_id', p_player_id,
     'player_name', v_player.display_name,
     'guess', p_guess,
-    'correct', v_is_correct,
-    'previous_prompt_text', v_current_prompt ->> 'prompt_text',
+    'outcome', v_outcome,
     'previous_value', v_current_value,
-    'new_prompt_text', v_new_prompt.prompt_text,
-    'new_value', v_new_prompt.numeric_value,
+    'previous_label', v_current_value_obj ->> 'label',
+    'new_value', v_next_value,
+    'new_label', v_next_label,
     'guessed_at', now()
   );
 
   v_new_history := COALESCE(v_config -> 'guess_history', '[]'::jsonb) || jsonb_build_array(v_guess_entry);
-  v_used_ids := v_used_ids || to_jsonb(v_new_prompt.id::text);
 
-  -- The new prompt becomes the reference for the next guess regardless of
-  -- whether this one was right - the eliminated-and-game-continues case still
-  -- needs the next player to see the freshly revealed number, not the stale one
+  -- The new value becomes the reference for the next guess regardless of
+  -- outcome - a wrong guess still needs the next player to see the value
+  -- that caused the elimination, not the stale one; a push carries the tied
+  -- value forward the same way
   v_config := jsonb_build_object(
-    'current_prompt', jsonb_build_object(
-      'id', v_new_prompt.id,
-      'prompt_text', v_new_prompt.prompt_text,
-      'numeric_value', v_new_prompt.numeric_value,
-      'category', v_new_prompt.category
+    'current_value', jsonb_build_object(
+      'id', v_next_id,
+      'label', v_next_label,
+      'value', v_next_value,
+      'category', v_category
     ),
     'last_guess', v_guess_entry,
     'guess_history', v_new_history,
-    'used_prompt_ids', v_used_ids
+    'tie_behavior', v_tie_behavior
   );
+  IF v_category <> 'random_numbers' THEN
+    v_config := v_config || jsonb_build_object('used_prompt_ids', v_used_ids);
+  END IF;
 
-  IF NOT v_is_correct THEN
-    -- Wrong guess: eliminate the player (same pattern as handle_timeout)
+  IF v_eliminate THEN
+    -- Wrong guess (or an 'elimination'-mode tie): eliminate the player, same
+    -- pattern as handle_timeout
     UPDATE game_players SET is_eliminated = true WHERE id = p_player_id;
 
     SELECT count(*) INTO v_active_players_count
@@ -827,7 +936,7 @@ BEGIN
     IF v_active_players_count <= 1 AND v_turn_order_len > 1 THEN
       -- Award the sole remaining active player (if any) Game Night points:
       -- +3 for winning, +1 per round survived (correct guesses they
-      -- personally landed this game)
+      -- personally landed this game - a push never counts either way)
       SELECT id INTO v_winner_id
       FROM game_players
       WHERE session_id = p_session_id AND is_eliminated = false
@@ -836,7 +945,7 @@ BEGIN
       IF v_winner_id IS NOT NULL THEN
         SELECT count(*) INTO v_winner_rounds
         FROM jsonb_array_elements(v_new_history) elem
-        WHERE (elem ->> 'player_id') = v_winner_id::text AND (elem ->> 'correct')::boolean = true;
+        WHERE (elem ->> 'player_id') = v_winner_id::text AND (elem ->> 'outcome') = 'correct';
 
         UPDATE game_players
         SET total_score = total_score + 3 + v_winner_rounds
@@ -852,44 +961,16 @@ BEGIN
       RETURN jsonb_build_object(
         'success', true,
         'status', 'finished',
-        'correct', false,
+        'outcome', v_outcome,
         'game_config', v_config
       );
     END IF;
-
-    -- Game continues: advance turn to next active player
-    v_next_index := v_session.current_turn_index;
-    FOR v_i IN 1..v_turn_order_len LOOP
-      v_next_index := (v_next_index + 1) % v_turn_order_len;
-      v_candidate_id := (v_session.turn_order ->> v_next_index)::uuid;
-
-      SELECT is_eliminated INTO v_is_elim
-      FROM game_players
-      WHERE id = v_candidate_id AND session_id = p_session_id;
-
-      IF v_is_elim IS FALSE THEN
-        EXIT;
-      END IF;
-    END LOOP;
-
-    v_deadline := now() + interval '20 seconds';
-
-    UPDATE game_sessions
-    SET current_turn_index = v_next_index,
-        turn_deadline = v_deadline,
-        game_config = v_config
-    WHERE id = p_session_id;
-
-    RETURN jsonb_build_object(
-      'success', true,
-      'correct', false,
-      'current_turn_index', v_next_index,
-      'turn_deadline', v_deadline,
-      'game_config', v_config
-    );
   END IF;
 
-  -- 7. Correct guess: nobody eliminated, advance turn to next active player
+  -- 7. Advance turn to the next active player - applies whether this guess
+  -- was correct, a push, or a non-finishing elimination; the active roster
+  -- only shrank in the elimination case, so the search loop below is the
+  -- only piece that needs to run in every branch
   v_next_index := v_session.current_turn_index;
   FOR v_i IN 1..v_turn_order_len LOOP
     v_next_index := (v_next_index + 1) % v_turn_order_len;
@@ -914,7 +995,7 @@ BEGIN
 
   RETURN jsonb_build_object(
     'success', true,
-    'correct', true,
+    'outcome', v_outcome,
     'current_turn_index', v_next_index,
     'turn_deadline', v_deadline,
     'game_config', v_config
@@ -1159,6 +1240,12 @@ BEGIN
     LIMIT 1;
   END IF;
 
+  -- No prompts at all for this engine - surface an explicit error instead of
+  -- advancing the round with a null prompt_text/id
+  IF v_prompt.id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'no_prompts_available');
+  END IF;
+
   -- A null options column means "vote for a player" (most_likely): build the
   -- option list from the session's active players instead of fixed text
   v_options := v_prompt.options;
@@ -1257,7 +1344,7 @@ BEGIN
   END IF;
 
   IF v_prompt.id IS NULL THEN
-    RAISE EXCEPTION 'No trivia prompts available - run scripts/seed-trivia.ts first';
+    RETURN jsonb_build_object('success', false, 'error', 'no_prompts_available');
   END IF;
 
   v_deadline := now() + interval '20 seconds';
@@ -1389,7 +1476,7 @@ BEGIN
         IF v_session.game_type = 'higher_lower' THEN
           SELECT count(*) INTO v_winner_rounds
           FROM jsonb_array_elements(COALESCE(v_session.game_config -> 'guess_history', '[]'::jsonb)) elem
-          WHERE (elem ->> 'player_id') = v_winner_id::text AND (elem ->> 'correct')::boolean = true;
+          WHERE (elem ->> 'player_id') = v_winner_id::text AND (elem ->> 'outcome') = 'correct';
         ELSE
           SELECT count(*) INTO v_winner_rounds
           FROM jsonb_array_elements(v_session.used_words) elem

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useGame } from '../context/GameContext';
+import { useGame, NO_PROMPTS_MESSAGE } from '../context/GameContext';
 import { HIGHER_LOWER_CATEGORIES } from '../data/prompts';
 import { useIsMobile } from '../hooks/useIsMobile';
 import {
@@ -11,6 +11,8 @@ import {
   TrendingDown,
   CheckCircle2,
   XCircle,
+  Scale,
+  LogOut,
 } from 'lucide-react';
 
 export const HigherLowerGameView: React.FC = () => {
@@ -22,11 +24,13 @@ export const HigherLowerGameView: React.FC = () => {
     currentTurnPlayer,
     timeRemaining,
     submitGuess,
+    resetGame,
     error,
     setError,
   } = useGame();
 
   const [submittingGuess, setSubmittingGuess] = useState<'higher' | 'lower' | null>(null);
+  const [returningToLobby, setReturningToLobby] = useState(false);
   // Drives a brief highlight on the "last guess" card whenever a new one
   // lands via realtime, rather than a plain always-on static card - this is
   // the "reveal" beat between one player's guess and the next player's turn.
@@ -52,9 +56,9 @@ export const HigherLowerGameView: React.FC = () => {
 
   if (!session) return null;
 
-  const categoryKey = session.category || 'population';
-  const categoryInfo = HIGHER_LOWER_CATEGORIES[categoryKey] || HIGHER_LOWER_CATEGORIES['population'];
-  const currentPrompt = session.game_config?.current_prompt;
+  const categoryKey = session.category || 'random_numbers';
+  const categoryInfo = HIGHER_LOWER_CATEGORIES[categoryKey] || HIGHER_LOWER_CATEGORIES['random_numbers'];
+  const currentValue = session.game_config?.current_value;
   const guessHistory = session.game_config?.guess_history || [];
 
   const handleGuess = async (guess: 'higher' | 'lower') => {
@@ -62,6 +66,12 @@ export const HigherLowerGameView: React.FC = () => {
     setSubmittingGuess(guess);
     await submitGuess(guess);
     setSubmittingGuess(null);
+  };
+
+  const handleReturnToLobby = async () => {
+    setReturningToLobby(true);
+    await resetGame();
+    setReturningToLobby(false);
   };
 
   // Turn order list with players (identical pattern to word-chain's GameView)
@@ -123,9 +133,16 @@ export const HigherLowerGameView: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="text-lg">{categoryInfo.icon}</span>
             <div>
-              <span className="font-bold text-xs text-white uppercase tracking-wider">
-                {categoryInfo.name}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-xs text-white uppercase tracking-wider">
+                  {categoryInfo.name}
+                </span>
+                {categoryInfo.hasDifficulty && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30 capitalize">
+                    {session.difficulty || 'medium'}
+                  </span>
+                )}
+              </div>
               <span className="text-[10px] text-slate-400 block">
                 Guess {guessHistory.length + 1}
               </span>
@@ -190,41 +207,53 @@ export const HigherLowerGameView: React.FC = () => {
         {/* 3. Current Reference Number Showcase */}
         <div className="text-center py-2 mb-6">
           <div className="text-xs uppercase tracking-widest font-semibold text-slate-400 mb-2">
-            {currentPrompt?.prompt_text || 'Loading number...'} is
+            {currentValue?.label || 'Loading number...'} is
           </div>
           <div className="inline-block p-4 rounded-3xl bg-gradient-to-tr from-indigo-600/30 via-purple-600/20 to-pink-600/30 border border-indigo-500/40 shadow-inner">
             <span className="text-5xl sm:text-6xl font-black font-mono tracking-tight text-white drop-shadow-lg">
-              {currentPrompt?.numeric_value !== undefined ? currentPrompt.numeric_value.toLocaleString() : '—'}
+              {currentValue ? currentValue.value.toLocaleString() : '—'}
             </span>
           </div>
 
           {/* Last Guess Reveal - a persistent context card (mirrors word-chain's
               "From X -> Y" hint), with a brief highlight pulse driven by
-              justRevealed whenever a fresh guess lands via realtime */}
+              justRevealed whenever a fresh guess lands via realtime. A push
+              (tie) gets its own neutral state, distinct from correct/wrong. */}
           {lastGuess && (
             <div
               className={`mt-4 mx-auto max-w-sm p-3 rounded-2xl border text-xs transition-all duration-500 ${
                 justRevealed
-                  ? lastGuess.correct
+                  ? lastGuess.outcome === 'correct'
                     ? 'bg-emerald-950/60 border-emerald-500/60 scale-105 shadow-lg shadow-emerald-500/10'
-                    : 'bg-rose-950/60 border-rose-500/60 scale-105 shadow-lg shadow-rose-500/10'
+                    : lastGuess.outcome === 'incorrect'
+                    ? 'bg-rose-950/60 border-rose-500/60 scale-105 shadow-lg shadow-rose-500/10'
+                    : 'bg-amber-950/60 border-amber-500/60 scale-105 shadow-lg shadow-amber-500/10'
                   : 'bg-slate-950/60 border-slate-800'
               }`}
             >
               <div className="flex items-center justify-center gap-1.5 font-semibold">
-                {lastGuess.correct ? (
+                {lastGuess.outcome === 'correct' ? (
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                ) : (
+                ) : lastGuess.outcome === 'incorrect' ? (
                   <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                ) : (
+                  <Scale className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 )}
-                <span className={lastGuess.correct ? 'text-emerald-300' : 'text-rose-300'}>
-                  {lastGuess.player_name} guessed {lastGuess.guess.toUpperCase()} —{' '}
-                  {lastGuess.correct ? 'Correct!' : 'Wrong!'}
-                </span>
+                {lastGuess.outcome === 'push' ? (
+                  <span className="text-amber-300">
+                    {lastGuess.player_name} guessed {lastGuess.guess.toUpperCase()} — Tie! No change,
+                    next player's turn
+                  </span>
+                ) : (
+                  <span className={lastGuess.outcome === 'correct' ? 'text-emerald-300' : 'text-rose-300'}>
+                    {lastGuess.player_name} guessed {lastGuess.guess.toUpperCase()} —{' '}
+                    {lastGuess.outcome === 'correct' ? 'Correct!' : 'Wrong!'}
+                  </span>
+                )}
               </div>
               <div className="text-slate-400 mt-1">
-                {lastGuess.previous_prompt_text} was {lastGuess.previous_value.toLocaleString()} →{' '}
-                {lastGuess.new_prompt_text} is {lastGuess.new_value.toLocaleString()}
+                {lastGuess.previous_label} was {lastGuess.previous_value.toLocaleString()} →{' '}
+                {lastGuess.new_label} is {lastGuess.new_value.toLocaleString()}
               </div>
             </div>
           )}
@@ -258,12 +287,32 @@ export const HigherLowerGameView: React.FC = () => {
           </div>
         )}
 
-        {/* Error notification */}
+        {/* Error notification - a no_prompts_available error means this round
+            can never resolve for anyone (not just the player whose guess
+            triggered it), so it gets its own escape hatch back to the lobby
+            instead of leaving the whole table stuck on this screen */}
         {error && (
           <div className="mt-3 p-3 bg-rose-950/50 border border-rose-800/50 rounded-xl text-rose-300 text-xs flex items-center gap-2 animate-shake">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
             <span>{error}</span>
           </div>
+        )}
+        {error === NO_PROMPTS_MESSAGE && (
+          <button
+            type="button"
+            onClick={handleReturnToLobby}
+            disabled={returningToLobby}
+            className="mt-2 w-full py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-medium transition flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {returningToLobby ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Return to Lobby</span>
+              </>
+            )}
+          </button>
         )}
       </div>
 

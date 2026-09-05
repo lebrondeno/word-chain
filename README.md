@@ -123,3 +123,15 @@ npx tsx scripts/seed-trivia.ts
 It's safe to re-run — questions are deduped on their exact text, so repeat runs only add newly-fetched material instead of inserting duplicates.
 
 **Setup**: add `SUPABASE_SERVICE_ROLE_KEY` to your `.env` (from Supabase Dashboard > Project Settings > API > "service_role" secret key — **not** the anon key). The script needs it to bypass RLS and write content, so it must only ever be run locally; never commit this key or reference it from client-side code. Make sure you've also run the latest `supabase/schema.sql`, which adds the `correct_answer` column and unique index the script depends on.
+
+### Higher or Lower Population Seeding
+
+[`scripts/seed-higher-lower.ts`](./scripts/seed-higher-lower.ts) is the same kind of standalone content-management utility, for the "Higher or Lower" game type's `population` category. It pulls country population figures from the [REST Countries](https://restcountries.com) API and inserts them into `game_prompts` under `engine = 'higher_lower', category = 'population'`, `source = 'restcountries_api'`. It's never called live during gameplay — the game reads only from this cached table (see `src/lib/higherLowerProviders/cachedTableProvider.ts`), so re-running this script is how that dataset gets refreshed.
+
+```bash
+npx tsx scripts/seed-higher-lower.ts
+```
+
+Same setup as trivia seeding above (`SUPABASE_SERVICE_ROLE_KEY` in `.env`, latest `supabase/schema.sql` applied first), and safe to re-run — rows are deduped on exact prompt text. `random_numbers`, Higher or Lower's other category, needs no seed data at all — values are generated live, server-side, per `submit_guess`'s difficulty-aware spread.
+
+`supabase/schema.sql` also bundles a small hand-curated `football_stats` set, but it's deliberately left out of the category picker in `src/data/prompts.ts` until it has a real seed script backing it like `population` does — the rows stay in `game_prompts` (harmless) but aren't selectable in the app yet.

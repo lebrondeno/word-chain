@@ -85,21 +85,46 @@ export const TRIVIA_CATEGORIES: Record<string, { id: string; name: string; icon:
   },
 };
 
-// Matches the category slugs seeded into game_prompts under engine = 'higher_lower'
-export const HIGHER_LOWER_CATEGORIES: Record<string, { id: string; name: string; icon: string; description: string }> = {
+// Matches the category slugs seeded into game_prompts under engine =
+// 'higher_lower' (population), plus 'random_numbers' which has no seeded
+// rows at all - it's generated live by
+// src/lib/higherLowerProviders/generatedProvider.ts and submit_guess's
+// matching SQL branch. hasDifficulty gates the lobby's Easy/Medium/Hard/
+// Expert selector - only meaningful for the generated provider, since a
+// cached-table category's variance comes from its real-world data, not a
+// tunable spread.
+//
+// 'football_stats' has 7 manually-seeded rows in supabase/schema.sql, but
+// that was only ever placeholder data for a future real content source, not
+// a maintained category - deliberately left out of this picker so it can't
+// be selected until a real seed script backs it (see scripts/seed-higher-
+// lower.ts for the population equivalent). The game_prompts rows are left in
+// place; re-add an entry here once real data exists.
+export const HIGHER_LOWER_CATEGORIES: Record<
+  string,
+  { id: string; name: string; icon: string; description: string; hasDifficulty?: boolean }
+> = {
+  random_numbers: {
+    id: 'random_numbers',
+    name: 'Random Numbers',
+    icon: '🔢',
+    description: 'Procedurally generated - choose your difficulty',
+    hasDifficulty: true,
+  },
   population: {
     id: 'population',
     name: 'World Populations',
     icon: '🌆',
     description: 'City & country population figures',
   },
-  football_stats: {
-    id: 'football_stats',
-    name: 'Football Stats',
-    icon: '⚽',
-    description: "Legendary players' international caps",
-  },
 };
+
+export const HIGHER_LOWER_DIFFICULTIES: { id: string; name: string; description: string }[] = [
+  { id: 'easy', name: 'Easy', description: 'Big gaps between numbers' },
+  { id: 'medium', name: 'Medium', description: 'Moderate gaps' },
+  { id: 'hard', name: 'Hard', description: 'Numbers often close' },
+  { id: 'expert', name: 'Expert', description: 'Razor-thin margins' },
+];
 
 export const GAME_TYPES: Record<string, GameTypeInfo> = {
   word_chain: {
@@ -160,8 +185,8 @@ export const GAME_TYPES: Record<string, GameTypeInfo> = {
     icon: '📈',
     description: 'Guess if the next number is higher or lower - one wrong guess and you\'re out',
     categories: [
+      { id: 'random_numbers', name: 'Random Numbers', icon: '🔢', description: 'Procedurally generated - choose your difficulty' },
       { id: 'population', name: 'World Populations', icon: '🌆', description: 'City & country population figures' },
-      { id: 'football_stats', name: 'Football Stats', icon: '⚽', description: "Legendary players' international caps" },
     ],
   },
 };

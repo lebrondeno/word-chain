@@ -11,6 +11,7 @@ import {
   LogOut,
   CheckCircle2,
   XCircle,
+  Scale,
 } from 'lucide-react';
 
 export const FinishedView: React.FC = () => {
@@ -53,11 +54,11 @@ export const FinishedView: React.FC = () => {
   // never touches that column
   const isHigherLower = session.game_type === 'higher_lower';
   const categoryInfo = isHigherLower
-    ? HIGHER_LOWER_CATEGORIES[session.category] || HIGHER_LOWER_CATEGORIES['population']
+    ? HIGHER_LOWER_CATEGORIES[session.category] || HIGHER_LOWER_CATEGORIES['random_numbers']
     : CATEGORIES[session.category] || CATEGORIES['cities'];
   const usedWordsList = session.used_words || [];
   const guessHistory = session.game_config?.guess_history || [];
-  const correctGuessCount = guessHistory.filter((g) => g.correct).length;
+  const correctGuessCount = guessHistory.filter((g) => g.outcome === 'correct').length;
   const isMeWinner = winnerPlayer?.id === localPlayer?.playerId;
 
   const handlePlayAgain = async () => {
@@ -178,10 +179,12 @@ export const FinishedView: React.FC = () => {
                     <span className="text-[10px] font-mono text-slate-500 w-4 shrink-0">
                       #{idx + 1}
                     </span>
-                    {g.correct ? (
+                    {g.outcome === 'correct' ? (
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    ) : (
+                    ) : g.outcome === 'incorrect' ? (
                       <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    ) : (
+                      <Scale className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     )}
                     <span className="font-semibold text-slate-200 truncate">
                       {g.player_name} guessed {g.guess.toUpperCase()}

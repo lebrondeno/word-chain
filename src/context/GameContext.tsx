@@ -7,14 +7,27 @@ import type {
   LocalPlayerSession,
   SessionStatus,
   VoteRevealPrompt,
+  HigherLowerGuess,
+  HigherLowerTieBehavior,
 } from '../types/game';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { generateRoomCode, sanitizeRoomCode } from '../lib/roomCode';
 import { validateWordSubmission, getLastLetter } from '../data';
 import { SEED_PROMPTS } from '../data/prompts';
 import { soundManager } from '../lib/audio';
+import { getHigherLowerProvider } from '../lib/higherLowerProviders';
 
 const STORAGE_SESSION_KEY = 'word_chain_player_session_v1';
+
+// Sentinel error code every prompt-picking RPC (start_game, submit_guess,
+// next_vote_round, next_trivia_round) returns as
+// jsonb_build_object('success', false, 'error', NO_PROMPTS_ERROR_CODE)
+// instead of throwing, when the session's category has zero rows in
+// game_prompts. Recognizing it here lets the UI show a specific "pick
+// another category" message with a way back to the lobby, rather than the
+// generic error banner or - worse - proceeding into a broken round.
+const NO_PROMPTS_ERROR_CODE = 'no_prompts_available';
+export const NO_PROMPTS_MESSAGE = 'This category has no questions yet — please pick another.';
 
 interface GameContextType {
   session: GameSession | null;
@@ -35,14 +48,19 @@ interface GameContextType {
   createGame: (
     displayName: string,
     category?: string,
-    gameType?: string
+    gameType?: string,
+    difficulty?: string
   ) => Promise<{ success: boolean; roomCode?: string; error?: string }>;
   joinGame: (
     roomCode: string,
     displayName: string,
     rejoinMode?: 'reuse' | 'new'
   ) => Promise<{ success: boolean; error?: string; needsRejoinConfirm?: boolean; existingPlayerName?: string }>;
-  setGameSettings: (gameType: string, category: string) => Promise<{ success: boolean; error?: string }>;
+  setGameSettings: (
+    gameType: string,
+    category: string,
+    difficulty?: string
+  ) => Promise<{ success: boolean; error?: string }>;
   startGame: () => Promise<{ success: boolean; error?: string }>;
   submitWord: (word: string) => Promise<{ success: boolean; error?: string }>;
   submitGuess: (guess: 'higher' | 'lower') => Promise<{ success: boolean; error?: string }>;
@@ -548,28 +566,25 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return {
           id: selected.id,
           prompt_text: selected.prompt_text,
-          // A null options column means "vote for a player" only for
-          // most_likely - higher_lower also has null options, but those mean
-          // "compare numeric_value instead", not "fall back to the player
-          // roster", so resolvePromptOptions must not run for it
+          // A null options column means "vote for a player" - only true for
+          // most_likely, so resolvePromptOptions must not run for anything else
           options:
             engine === 'most_likely'
               ? resolvePromptOptions(selected.options as VoteRevealPrompt['options'])
               : (selected.options as VoteRevealPrompt['options']),
           category: selected.category,
           correct_answer: selected.correct_answer || undefined,
-          numeric_value: selected.numeric_value ?? undefined,
         };
       }
     } catch (e) {
       console.warn('Could not query game_prompts from DB, using fallback prompts:', e);
     }
 
-    // Local fallback from SEED_PROMPTS. Trivia and higher_lower have no
-    // bundled fallback content (seeded server-side only, via
-    // scripts/seed-trivia.ts and supabase/schema.sql respectively), so this
-    // pool is empty for those engines - surface a clear error instead of
-    // crashing on an undefined `selected` below.
+    // Local fallback from SEED_PROMPTS. Trivia has no bundled fallback
+    // content (seeded server-side only via scripts/seed-trivia.ts), so this
+    // pool is empty for that engine - surface a clear error instead of
+    // crashing on an undefined `selected` below. higher_lower never calls
+    // this helper at all - see src/lib/higherLowerProviders instead.
     const enginePrompts = SEED_PROMPTS.filter((p) => p.engine === engine);
     const catPrompts = enginePrompts.filter((p) => p.category === category);
     const pool = catPrompts.length > 0 ? catPrompts : enginePrompts;
@@ -579,8 +594,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(
         engine === 'trivia'
           ? 'No trivia prompts available. Run `npx tsx scripts/seed-trivia.ts` first.'
-          : engine === 'higher_lower'
-          ? 'No higher_lower prompts available. Re-run supabase/schema.sql to seed them.'
           : `No ${engine} prompts available for category "${category}".`
       );
     }
@@ -597,7 +610,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const createGame = async (
     displayName: string,
     category: string = 'cities',
-    gameType: string = 'word_chain'
+    gameType: string = 'word_chain',
+    difficulty?: string
   ) => {
     setError(null);
     setLoading(true);
@@ -619,6 +633,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           last_letter: null,
           turn_deadline: null,
           game_config: {},
+          ...(difficulty ? { difficulty } : {}),
         })
         .select()
         .single();
@@ -797,8 +812,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Action: Update Game Settings (Type & Category) in Lobby
-  const setGameSettings = async (gameType: string, category: string) => {
+  // Action: Update Game Settings (Type & Category, and Difficulty for
+  // higher_lower's 'random_numbers' category) in Lobby
+  const setGameSettings = async (gameType: string, category: string, difficulty?: string) => {
     if (!session || !localPlayer?.isHost) return { success: false, error: 'Host only' };
     setError(null);
     const supabase = getSupabase();
@@ -809,6 +825,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .update({
           game_type: gameType,
           category,
+          ...(difficulty ? { difficulty } : {}),
         })
         .eq('id', session.id)
         .select()
@@ -835,6 +852,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: rpcData, error: rpcErr } = await supabase.rpc('start_game', {
         p_session_id: session.id,
       });
+
+      if (!rpcErr && rpcData?.success === false && rpcData?.error === NO_PROMPTS_ERROR_CODE) {
+        setError(NO_PROMPTS_MESSAGE);
+        return { success: false, error: NO_PROMPTS_MESSAGE };
+      }
 
       if (!rpcErr && rpcData) {
         await fetchSessionState(session.id);
@@ -910,11 +932,18 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(updatedSession as GameSession);
         return { success: true };
       } else if (session.game_type === 'higher_lower') {
-        const prompt = await pickRandomPrompt(session.category || 'population', [], 'higher_lower');
+        const category = session.category || 'random_numbers';
+        const difficulty = session.difficulty || 'medium';
+        const provider = getHigherLowerProvider(category);
+        const initial = await provider.getInitialValue(category, difficulty);
         const deadline = new Date(Date.now() + 20000).toISOString();
         const config = {
-          current_prompt: prompt,
-          used_prompt_ids: [prompt.id],
+          current_value: { id: initial.id, label: initial.label, value: initial.value, category },
+          tie_behavior: 'push' as HigherLowerTieBehavior,
+          // Generated values ('random_numbers') are drawn from no finite
+          // pool, so there's nothing to dedupe - only cached-table
+          // categories track used ids
+          ...(initial.id ? { used_prompt_ids: [initial.id] } : {}),
         };
 
         const { data: updatedSession, error: updateErr } = await supabase
@@ -1075,8 +1104,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Action: Submit Guess (Higher or Lower). Turn/elimination shape mirrors
   // submitWord above (verify turn, mutate, advance/finish) minus the word
-  // validation - the only new piece is comparing numeric_value against the
-  // freshly-drawn prompt.
+  // validation - the new pieces are the category-driven provider lookup
+  // (see src/lib/higherLowerProviders) and tie_behavior grading, both
+  // mirroring submit_guess's SQL exactly.
   const submitGuess = async (guess: 'higher' | 'lower') => {
     if (!session || !localPlayer) {
       return { success: false, error: 'Session not active' };
@@ -1096,55 +1126,78 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         p_guess: guess,
       });
 
+      if (!rpcErr && rpcData?.success === false && rpcData?.error === NO_PROMPTS_ERROR_CODE) {
+        setError(NO_PROMPTS_MESSAGE);
+        return { success: false, error: NO_PROMPTS_MESSAGE };
+      }
+
       if (!rpcErr && rpcData) {
-        if (rpcData.correct) {
+        if (rpcData.outcome === 'correct') {
           soundManager.playCorrect();
-        } else {
+        } else if (rpcData.outcome === 'incorrect') {
           soundManager.playEliminated();
+        } else {
+          soundManager.playVote();
         }
         await fetchSessionState(session.id);
         return { success: true };
       }
 
       // Direct fallback mutation (20s deadline)
-      const currentPrompt = session.game_config?.current_prompt;
-      if (!currentPrompt || currentPrompt.numeric_value === undefined) {
+      const currentValueObj = session.game_config?.current_value;
+      if (!currentValueObj) {
         throw new Error('No active number for this round');
       }
-      const currentValue = currentPrompt.numeric_value;
+      const currentValue = currentValueObj.value;
+      const category = session.category || 'random_numbers';
+      const difficulty = session.difficulty || 'medium';
+      const tieBehavior: HigherLowerTieBehavior = session.game_config?.tie_behavior || 'push';
 
       const usedIds = (session.game_config?.used_prompt_ids as string[]) || [];
-      const newPrompt = await pickRandomPrompt(session.category || 'population', usedIds, 'higher_lower');
-      const newValue = newPrompt.numeric_value ?? 0;
+      const provider = getHigherLowerProvider(category);
+      const next = await provider.getNextValue(category, difficulty, currentValue, usedIds);
 
-      let isCorrect: boolean;
-      if (newValue > currentValue) isCorrect = guess === 'higher';
-      else if (newValue < currentValue) isCorrect = guess === 'lower';
-      else isCorrect = false;
+      const isTie = next.value === currentValue;
+      let outcome: HigherLowerGuess['outcome'];
+      let eliminate: boolean;
+      if (isTie) {
+        if (tieBehavior === 'elimination') {
+          outcome = 'incorrect';
+          eliminate = true;
+        } else if (tieBehavior === 'auto_correct') {
+          outcome = 'correct';
+          eliminate = false;
+        } else {
+          outcome = 'push';
+          eliminate = false;
+        }
+      } else if ((next.value > currentValue && guess === 'higher') || (next.value < currentValue && guess === 'lower')) {
+        outcome = 'correct';
+        eliminate = false;
+      } else {
+        outcome = 'incorrect';
+        eliminate = true;
+      }
 
-      const guessEntry = {
+      const guessEntry: HigherLowerGuess = {
         player_id: localPlayer.playerId,
         player_name: localPlayer.displayName,
         guess,
-        correct: isCorrect,
-        previous_prompt_text: currentPrompt.prompt_text,
+        outcome,
         previous_value: currentValue,
-        new_prompt_text: newPrompt.prompt_text,
-        new_value: newValue,
+        previous_label: currentValueObj.label,
+        new_value: next.value,
+        new_label: next.label,
         guessed_at: new Date().toISOString(),
       };
 
       const newHistory = [...(session.game_config?.guess_history || []), guessEntry];
       const newConfig = {
-        current_prompt: {
-          id: newPrompt.id,
-          prompt_text: newPrompt.prompt_text,
-          numeric_value: newValue,
-          category: newPrompt.category,
-        },
+        current_value: { id: next.id, label: next.label, value: next.value, category },
         last_guess: guessEntry,
         guess_history: newHistory,
-        used_prompt_ids: [...usedIds, newPrompt.id],
+        tie_behavior: tieBehavior,
+        ...(next.id ? { used_prompt_ids: [...usedIds, next.id] } : {}),
       };
 
       const totalInOrder = turnOrder.length;
@@ -1161,7 +1214,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const deadline = new Date(Date.now() + 20000).toISOString();
 
-      if (!isCorrect) {
+      if (eliminate) {
         soundManager.playEliminated();
 
         await supabase
@@ -1183,9 +1236,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const winner = remainingActive[0];
           if (winner) {
             // Award Game Night points: +3 for winning, +1 per round survived
-            // (correct guesses they personally landed this game)
+            // (correct guesses they personally landed this game - a push
+            // never counts either way)
             const winnerRounds = newHistory.filter(
-              (g) => g.player_id === winner.id && g.correct
+              (g) => g.player_id === winner.id && g.outcome === 'correct'
             ).length;
             await supabase
               .from('game_players')
@@ -1230,8 +1284,12 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true };
       }
 
-      // Correct guess: nobody eliminated, advance to the next active player
-      soundManager.playCorrect();
+      // Correct or push: nobody eliminated, advance to the next active player
+      if (outcome === 'correct') {
+        soundManager.playCorrect();
+      } else {
+        soundManager.playVote();
+      }
       const { data: updatedSession, error: updateErr } = await supabase
         .from('game_sessions')
         .update({ current_turn_index: nextIndex, turn_deadline: deadline, game_config: newConfig })
@@ -1325,6 +1383,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: rpcData, error: rpcErr } = await supabase.rpc('next_vote_round', {
         p_session_id: session.id,
       });
+
+      if (!rpcErr && rpcData?.success === false && rpcData?.error === NO_PROMPTS_ERROR_CODE) {
+        setError(NO_PROMPTS_MESSAGE);
+        return { success: false, error: NO_PROMPTS_MESSAGE };
+      }
 
       if (!rpcErr && rpcData) {
         await fetchSessionState(session.id);
@@ -1484,6 +1547,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         p_session_id: session.id,
       });
 
+      if (!rpcErr && rpcData?.success === false && rpcData?.error === NO_PROMPTS_ERROR_CODE) {
+        setError(NO_PROMPTS_MESSAGE);
+        return { success: false, error: NO_PROMPTS_MESSAGE };
+      }
+
       if (!rpcErr && rpcData) {
         await fetchSessionState(session.id);
         return { success: true };
@@ -1618,7 +1686,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // correct guesses landed (game_config.guess_history)
           const winnerRounds = isHigherLower
             ? (session.game_config?.guess_history || []).filter(
-                (g) => g.player_id === winner.id && g.correct
+                (g) => g.player_id === winner.id && g.outcome === 'correct'
               ).length
             : (session.used_words || []).filter(
                 (w) => typeof w !== 'string' && w.player_id === winner.id
