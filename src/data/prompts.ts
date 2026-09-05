@@ -40,6 +40,18 @@ export const VOTE_REVEAL_CATEGORIES: Record<string, { id: string; name: string; 
     icon: '🗣️',
     description: 'Funny controversial yes/no takes',
   },
+  church_banter: {
+    id: 'church_banter',
+    name: 'Church Banter',
+    icon: '⛪',
+    description: 'Fellowship, worship & church-life scenarios',
+  },
+  boys_banter: {
+    id: 'boys_banter',
+    name: "Boys' Banter",
+    icon: '🎮',
+    description: 'Sports, gaming & guy-talk dilemmas',
+  },
 };
 
 export const MOST_LIKELY_CATEGORIES: Record<string, { id: string; name: string; icon: string; description: string }> = {
@@ -152,6 +164,8 @@ export const GAME_TYPES: Record<string, GameTypeInfo> = {
       { id: 'couples', name: 'Couples & Dates', icon: '❤️', description: 'Relationship scenarios' },
       { id: 'majority_rules', name: 'Majority Rules', icon: '🙋', description: 'Binary funny & opinion questions' },
       { id: 'boys_debate', name: "Boys' Debate", icon: '🗣️', description: 'Funny controversial yes/no takes' },
+      { id: 'church_banter', name: 'Church Banter', icon: '⛪', description: 'Fellowship & church-life scenarios' },
+      { id: 'boys_banter', name: "Boys' Banter", icon: '🎮', description: 'Sports, gaming & guy-talk dilemmas' },
     ],
   },
   most_likely: {
