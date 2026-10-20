@@ -4,10 +4,12 @@ import {
   DEFAULT_QUIZ_LENGTH,
   MAX_CUSTOM_QUESTIONS,
   QUIZ_LENGTH_OPTIONS,
+  VIBE_PACKS,
   getOptionText,
   getOptionImage,
   type QuizLength,
   type CreatorQuestionItem,
+  type VibePackId,
 } from '../data/friendshipPrompts';
 import {
   createFriendshipQuiz,
@@ -79,6 +81,10 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
     const draft = initialQuizCode ? null : getQuizDraft();
     return (draft?.quizLength as QuizLength) || DEFAULT_QUIZ_LENGTH;
   });
+  const [vibePack, setVibePack] = useState<VibePackId>(() => {
+    const draft = initialQuizCode ? null : getQuizDraft();
+    return (draft?.vibePack as VibePackId) || 'all';
+  });
   const [builderQuestions, setBuilderQuestions] = useState<CreatorQuestionItem[]>(() => {
     const draft = initialQuizCode ? null : getQuizDraft();
     return draft?.builderQuestions || [];
@@ -132,12 +138,13 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
       saveQuizDraft({
         creatorName,
         quizLength,
+        vibePack,
         builderQuestions,
         currentBuilderIndex,
         usedTemplateIds,
       });
     }
-  }, [mode, creatorName, quizLength, builderQuestions, currentBuilderIndex, usedTemplateIds]);
+  }, [mode, creatorName, quizLength, vibePack, builderQuestions, currentBuilderIndex, usedTemplateIds]);
 
   // Load quiz if initialQuizCode is passed
   useEffect(() => {
@@ -199,9 +206,21 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
     }
     setError(null);
 
-    // Pick random templates for the chosen length
-    const shuffled = [...FRIENDSHIP_QUESTION_BANK].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, quizLength);
+    const pack = VIBE_PACKS.find((p) => p.id === vibePack) || VIBE_PACKS[0];
+    const packQuestions = FRIENDSHIP_QUESTION_BANK.filter((q) => pack.categories.includes(q.category));
+
+    // Shuffle questions from the chosen vibe pack
+    const shuffledPack = [...packQuestions].sort(() => Math.random() - 0.5);
+
+    // If pack doesn't have enough questions for chosen quizLength, fill remaining from full bank
+    let selected = shuffledPack.slice(0, quizLength);
+    if (selected.length < quizLength) {
+      const selectedIds = new Set(selected.map((q) => q.id));
+      const remainingBank = FRIENDSHIP_QUESTION_BANK
+        .filter((q) => !selectedIds.has(q.id))
+        .sort(() => Math.random() - 0.5);
+      selected = [...selected, ...remainingBank.slice(0, quizLength - selected.length)];
+    }
 
     const initialItems: CreatorQuestionItem[] = selected.map((t) => ({
       id: t.id,
@@ -223,6 +242,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
     setBuilderQuestions([]);
     setCurrentBuilderIndex(0);
     setUsedTemplateIds([]);
+    setVibePack('all');
     setHasRestoredDraft(false);
     setMode('create_setup');
   };
@@ -248,9 +268,19 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
 
   const handleSwapCurrentQuestion = () => {
     const currentQ = builderQuestions[currentBuilderIndex];
-    const available = FRIENDSHIP_QUESTION_BANK.filter(
-      (t) => !usedTemplateIds.includes(t.id) && t.id !== currentQ.id
+    const pack = VIBE_PACKS.find((p) => p.id === vibePack) || VIBE_PACKS[0];
+
+    // Pull from the chosen Vibe Pack first
+    let available = FRIENDSHIP_QUESTION_BANK.filter(
+      (t) => pack.categories.includes(t.category) && !usedTemplateIds.includes(t.id) && t.id !== currentQ.id
     );
+
+    // Fall back to the full bank if pack runs out of unused prompts
+    if (available.length === 0) {
+      available = FRIENDSHIP_QUESTION_BANK.filter(
+        (t) => !usedTemplateIds.includes(t.id) && t.id !== currentQ.id
+      );
+    }
 
     if (available.length === 0) {
       setError('All template questions have been cycled through!');
@@ -519,6 +549,46 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             </div>
           </div>
 
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[#0b2545] mb-2">
+              Question Vibe Pack
+            </label>
+            <div className="space-y-2">
+              {VIBE_PACKS.map((pack) => {
+                const isSelected = vibePack === pack.id;
+                return (
+                  <button
+                    key={pack.id}
+                    type="button"
+                    onClick={() => setVibePack(pack.id)}
+                    className={`w-full p-3 rounded-2xl border-2 text-left transition flex items-center justify-between gap-3 ${
+                      isSelected
+                        ? 'border-[#3b4cca] bg-blue-50/60 shadow-sm'
+                        : 'border-slate-200 bg-[#f8fafc] text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-xl shrink-0">{pack.badge}</span>
+                      <div className="min-w-0">
+                        <div className={`font-bold text-xs ${isSelected ? 'text-[#0b2545]' : 'text-slate-800'}`}>
+                          {pack.name}
+                        </div>
+                        <div className="text-[11px] text-slate-500 line-clamp-1 leading-snug">
+                          {pack.description}
+                        </div>
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <div className="w-5 h-5 rounded-full bg-[#3b4cca] flex items-center justify-center text-white shrink-0">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="pt-2">
             <button
               type="button"
@@ -552,6 +622,11 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
               {hasRestoredDraft && (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
                   Draft Restored
+                </span>
+              )}
+              {vibePack !== 'all' && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 hidden sm:inline-block">
+                  {VIBE_PACKS.find((p) => p.id === vibePack)?.badge} {VIBE_PACKS.find((p) => p.id === vibePack)?.name}
                 </span>
               )}
             </div>

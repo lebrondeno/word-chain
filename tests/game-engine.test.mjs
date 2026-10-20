@@ -30,6 +30,7 @@ const {
   DEFAULT_QUIZ_LENGTH,
   MAX_CUSTOM_QUESTIONS,
   FRIENDSHIP_QUESTION_BANK,
+  VIBE_PACKS,
   getOptionText,
   getOptionImage,
 } = await jiti.import('../src/data/friendshipPrompts.ts');
@@ -127,7 +128,7 @@ test('Vote & Reveal Prompts and Category Integrity', () => {
   assert.equal(Object.keys(VOTE_REVEAL_CATEGORIES).includes('general'), true);
   assert.equal(Object.keys(VOTE_REVEAL_CATEGORIES).includes('couples'), true);
 
-  assert.ok(SEED_PROMPTS.length >= 10, 'Expected at least 10 seed prompts');
+  assert.ok(SEED_PROMPTS.length >= 50, `Expected at least 50 seed prompts, got ${SEED_PROMPTS.length}`);
 
   const seenIds = new Set();
   for (const prompt of SEED_PROMPTS) {
@@ -164,7 +165,20 @@ test('Friendship Test - Question Bank & Quiz Configuration', () => {
   assert.deepEqual([...QUIZ_LENGTH_OPTIONS], [10, 15, 20]);
   assert.equal(DEFAULT_QUIZ_LENGTH, 10);
   assert.equal(MAX_CUSTOM_QUESTIONS, 3);
-  assert.ok(FRIENDSHIP_QUESTION_BANK.length >= 30, 'Bank must have at least 30 questions');
+  assert.ok(FRIENDSHIP_QUESTION_BANK.length >= 96, `Bank must have at least 96 questions, found ${FRIENDSHIP_QUESTION_BANK.length}`);
+
+  // Category counts
+  const categoryCounts = {
+    lovers: 0,
+    gen_z: 0,
+    chaos: 0,
+    habits: 0,
+    food: 0,
+    travel: 0,
+    reactions: 0,
+    preferences: 0,
+    personality: 0,
+  };
 
   // Verify bank items structure
   const seenIds = new Set();
@@ -185,10 +199,16 @@ test('Friendship Test - Question Bank & Quiz Configuration', () => {
       assert.ok(getOptionImage(opt, optIdx).length > 20);
     }
     assert.ok(
-      ['habits', 'food', 'travel', 'reactions', 'preferences', 'personality'].includes(q.category),
+      ['habits', 'food', 'travel', 'reactions', 'preferences', 'personality', 'lovers', 'gen_z', 'chaos'].includes(q.category),
       `Invalid category ${q.category}`
     );
+    categoryCounts[q.category] = (categoryCounts[q.category] || 0) + 1;
   }
+
+  // Ensure minimum count for new categories
+  assert.ok(categoryCounts.lovers >= 25, `Expected >= 25 lovers questions, found ${categoryCounts.lovers}`);
+  assert.ok(categoryCounts.gen_z >= 25, `Expected >= 25 gen_z questions, found ${categoryCounts.gen_z}`);
+  assert.ok(categoryCounts.chaos >= 10, `Expected >= 10 chaos questions, found ${categoryCounts.chaos}`);
 
   // Quiz custom question cap simulation
   const customQuestions = [];
@@ -465,13 +485,38 @@ test('Friendship Test - Saved Quiz History Persistence (partyhub_my_quizzes)', (
   removeQuizFromHistory('TEST2');
 });
 
+test('Friendship Test - Vibe Packs Selection and Fallback Mechanics', () => {
+  assert.equal(VIBE_PACKS.length, 5);
+  const packIds = VIBE_PACKS.map((p) => p.id);
+  assert.deepEqual(packIds, ['all', 'gen_z', 'lovers', 'chaos', 'classic']);
+
+  // Check each pack filters appropriate categories
+  for (const pack of VIBE_PACKS) {
+    assert.ok(pack.name && pack.badge && pack.description);
+    assert.ok(pack.categories.length > 0);
+    const packQuestions = FRIENDSHIP_QUESTION_BANK.filter((q) => pack.categories.includes(q.category));
+    assert.ok(packQuestions.length >= 10, `Pack ${pack.id} must have at least 10 matching questions`);
+
+    // Simulate builder question selection with fallback
+    const targetLength = 20;
+    let selected = packQuestions.slice(0, targetLength);
+    if (selected.length < targetLength) {
+      const selectedIds = new Set(selected.map((q) => q.id));
+      const remainingBank = FRIENDSHIP_QUESTION_BANK.filter((q) => !selectedIds.has(q.id));
+      selected = [...selected, ...remainingBank.slice(0, targetLength - selected.length)];
+    }
+    assert.equal(selected.length, targetLength);
+  }
+});
+
 test('Friendship Test - In-Progress Quiz Draft Persistence (Survive Page Refresh)', () => {
   clearQuizDraft();
   assert.equal(getQuizDraft(), null);
 
   const draftPayload = {
     creatorName: 'Taylor',
-    quizLength: 10,
+    quizLength: 15,
+    vibePack: 'lovers',
     builderQuestions: [
       { id: 'q1', prompt: 'Prompt 1', options: ['A', 'B'], correctIndex: 1 },
       { id: 'q2', prompt: 'Prompt 2', options: ['C', 'D'], correctIndex: 0 },
@@ -485,6 +530,8 @@ test('Friendship Test - In-Progress Quiz Draft Persistence (Survive Page Refresh
   const restored = getQuizDraft();
   assert.ok(restored);
   assert.equal(restored.creatorName, 'Taylor');
+  assert.equal(restored.quizLength, 15);
+  assert.equal(restored.vibePack, 'lovers');
   assert.equal(restored.currentBuilderIndex, 1);
   assert.equal(restored.builderQuestions.length, 2);
   assert.equal(restored.builderQuestions[0].correctIndex, 1);

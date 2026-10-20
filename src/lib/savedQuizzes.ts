@@ -10,6 +10,7 @@ export interface UserSavedQuiz {
 export interface QuizDraft {
   creatorName: string;
   quizLength: number;
+  vibePack?: string;
   builderQuestions: any[];
   currentBuilderIndex: number;
   usedTemplateIds: string[];
