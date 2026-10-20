@@ -5,11 +5,13 @@ import { RoomEntryView } from './components/RoomEntryView';
 import { LobbyView } from './components/LobbyView';
 import { GameView } from './components/GameView';
 import { FinishedView } from './components/FinishedView';
+import { FriendshipQuizView } from './components/FriendshipQuizView';
 import { SupabaseModal } from './components/SupabaseModal';
 import { sanitizeRoomCode } from './lib/roomCode';
 
 function MainContent() {
   const { session, loading } = useGame();
+
   const [initialRoomCode, setInitialRoomCode] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
     const path = window.location.pathname;
@@ -21,6 +23,20 @@ function MainContent() {
     const codeParam = params.get('join') || params.get('room') || params.get('code');
     return codeParam ? sanitizeRoomCode(codeParam) : '';
   });
+
+  const [initialQuizCode, setInitialQuizCode] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    const params = new URLSearchParams(window.location.search);
+    const quizParam = params.get('quiz');
+    return quizParam ? quizParam.trim().toUpperCase() : '';
+  });
+
+  const [isFriendshipQuizOpen, setIsFriendshipQuizOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return Boolean(params.get('quiz'));
+  });
+
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
 
   // Listen for history back/forward navigation
@@ -28,13 +44,21 @@ function MainContent() {
     if (typeof window === 'undefined') return;
 
     const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const quizParam = params.get('quiz');
+      if (quizParam) {
+        setInitialQuizCode(quizParam.trim().toUpperCase());
+        setIsFriendshipQuizOpen(true);
+        return;
+      }
+
       const path = window.location.pathname;
       const match = path.match(/^\/join\/([a-zA-Z0-9]{3,6})/i);
       if (match && match[1]) {
         setInitialRoomCode(sanitizeRoomCode(match[1]));
         return;
       }
-      const params = new URLSearchParams(window.location.search);
+
       const codeParam = params.get('join') || params.get('room') || params.get('code');
       if (codeParam) {
         setInitialRoomCode(sanitizeRoomCode(codeParam));
@@ -45,22 +69,46 @@ function MainContent() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  const handleReturnToHub = () => {
+    setIsFriendshipQuizOpen(false);
+    setInitialQuizCode('');
+    // Remove query params if quiz was in URL
+    if (typeof window !== 'undefined' && window.location.search.includes('quiz=')) {
+      window.history.pushState({}, '', window.location.pathname);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center p-4">
-        <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mb-4" />
-        <p className="text-slate-400 text-xs font-medium">Connecting to WordChain...</p>
+        <div className="w-12 h-12 border-4 border-[#3b4cca]/30 border-t-[#3b4cca] rounded-full animate-spin mb-4" />
+        <p className="text-slate-600 text-xs font-semibold">Connecting to PartyHub...</p>
       </div>
     );
   }
 
-  // View routing driven by session and status
+  // View routing driven by mode, session and status
   const renderView = () => {
+    // 1. If Friendship Quiz is active (or opened via ?quiz=xxxx)
+    if (isFriendshipQuizOpen) {
+      return (
+        <FriendshipQuizView
+          initialQuizCode={initialQuizCode}
+          onExit={handleReturnToHub}
+        />
+      );
+    }
+
+    // 2. Real-time Room Sessions
     if (!session) {
       return (
         <RoomEntryView
           initialRoomCode={initialRoomCode}
           onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+          onOpenFriendshipQuiz={(code) => {
+            if (code) setInitialQuizCode(code);
+            setIsFriendshipQuizOpen(true);
+          }}
         />
       );
     }
@@ -77,28 +125,30 @@ function MainContent() {
           <RoomEntryView
             initialRoomCode={initialRoomCode}
             onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+            onOpenFriendshipQuiz={(code) => {
+              if (code) setInitialQuizCode(code);
+              setIsFriendshipQuizOpen(true);
+            }}
           />
         );
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white relative overflow-x-hidden">
-      {/* Background Decorative Ambient Gradients */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl" />
-        <div className="absolute top-1/3 -right-40 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 left-1/3 w-96 h-96 bg-pink-600/10 rounded-full blur-3xl" />
-      </div>
-
-      <Navbar />
+    <div className="min-h-screen bg-[#eef4fa] text-slate-800 flex flex-col selection:bg-[#3b4cca] selection:text-white relative overflow-x-hidden">
+      <Navbar onGoHome={handleReturnToHub} />
 
       <main className="relative z-10 flex-1 flex flex-col justify-start max-w-4xl w-full mx-auto pb-12">
         {renderView()}
       </main>
 
-      <footer className="relative z-10 py-6 border-t border-slate-900 text-center text-[11px] text-slate-500">
-        Multiplayer Word Chain • Powered by React, Supabase & Realtime
+      <footer className="relative z-10 py-6 border-t border-slate-200 bg-white/70 backdrop-blur-xs text-center text-xs text-slate-500 space-y-1">
+        <p className="font-semibold text-slate-700">
+          Party Game Hub • Word Chain • Would You Rather • Friendship Test
+        </p>
+        <p className="text-[11px] text-slate-400">
+          Designed for instant daylight mobile &amp; desktop play • Powered by React &amp; Supabase
+        </p>
       </footer>
 
       <SupabaseModal

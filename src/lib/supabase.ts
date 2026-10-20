@@ -4,8 +4,14 @@ const STORAGE_KEY_URL = 'word_chain_supabase_url';
 const STORAGE_KEY_ANON = 'word_chain_supabase_anon_key';
 
 export function getSupabaseConfig(): { url: string; anonKey: string } {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const metaEnv =
+    typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, string> }).env
+      ? (import.meta as { env: Record<string, string> }).env
+      : {};
+  const procEnv = (globalThis as { process?: { env?: Record<string, string> } }).process?.env || {};
+
+  const envUrl = metaEnv.VITE_SUPABASE_URL || procEnv.VITE_SUPABASE_URL || '';
+  const envKey = metaEnv.VITE_SUPABASE_ANON_KEY || procEnv.VITE_SUPABASE_ANON_KEY || '';
 
   const localUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_URL) || '' : '';
   const localKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ANON) || '' : '';

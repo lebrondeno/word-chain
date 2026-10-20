@@ -724,3 +724,214 @@ BEGIN
   RETURN jsonb_build_object('success', true, 'status', 'lobby');
 END;
 $$;
+
+
+-- ==========================================================
+-- ASYNCHRONOUS MODE: FRIENDSHIP TEST (KNOW ME BETTER)
+-- Anti-cheat secret answers & authoritatively scored leaderboards
+-- ==========================================================
+
+CREATE TABLE IF NOT EXISTS friendship_quizzes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text UNIQUE NOT NULL,
+  creator_name text NOT NULL,
+  questions jsonb NOT NULL, -- sanitized [{ id, prompt, options }]
+  total_questions int NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Secret answers table: NO public anon SELECT policy
+CREATE TABLE IF NOT EXISTS friendship_quiz_secrets (
+  quiz_id uuid PRIMARY KEY REFERENCES friendship_quizzes(id) ON DELETE CASCADE,
+  answer_key jsonb NOT NULL, -- array of correct indices e.g. [0, 2, 1, 3]
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS friendship_submissions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  quiz_id uuid REFERENCES friendship_quizzes(id) ON DELETE CASCADE,
+  player_name text NOT NULL,
+  player_name_normalized text NOT NULL,
+  score int NOT NULL,
+  total int NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (quiz_id, player_name_normalized)
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_friendship_quizzes_code ON friendship_quizzes(code);
+CREATE INDEX IF NOT EXISTS idx_friendship_submissions_quiz_score ON friendship_submissions(quiz_id, score DESC, created_at ASC);
+
+-- Enable RLS
+ALTER TABLE friendship_quizzes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE friendship_quiz_secrets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE friendship_submissions ENABLE ROW LEVEL SECURITY;
+
+-- Public read & write for sanitized quizzes and submissions
+DROP POLICY IF EXISTS "Public friendship_quizzes access" ON friendship_quizzes;
+CREATE POLICY "Public friendship_quizzes access" ON friendship_quizzes
+  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public friendship_submissions access" ON friendship_submissions;
+CREATE POLICY "Public friendship_submissions access" ON friendship_submissions
+  FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- Note: friendship_quiz_secrets deliberately has NO public SELECT policy
+-- Answers can only be verified server-side through SECURITY DEFINER RPC functions.
+
+-- Enable Realtime for friendship_submissions
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'friendship_submissions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE friendship_submissions;
+  END IF;
+END $$;
+
+-- RPC 1: Create Friendship Quiz
+CREATE OR REPLACE FUNCTION create_friendship_quiz(
+  p_code text,
+  p_creator_name text,
+  p_questions jsonb,
+  p_answer_key jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_quiz_id uuid;
+  v_total int;
+BEGIN
+  v_total := jsonb_array_length(p_questions);
+
+  INSERT INTO friendship_quizzes (code, creator_name, questions, total_questions)
+  VALUES (lower(trim(p_code)), trim(p_creator_name), p_questions, v_total)
+  RETURNING id INTO v_quiz_id;
+
+  INSERT INTO friendship_quiz_secrets (quiz_id, answer_key)
+  VALUES (v_quiz_id, p_answer_key);
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'quiz_id', v_quiz_id,
+    'code', lower(trim(p_code)),
+    'total_questions', v_total
+  );
+END;
+$$;
+
+-- RPC 2: Check single question answer for immediate green/red reveal
+CREATE OR REPLACE FUNCTION check_friendship_answer(
+  p_code text,
+  p_question_index int,
+  p_selected_option int
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_quiz friendship_quizzes%ROWTYPE;
+  v_answer_key jsonb;
+  v_correct_opt int;
+  v_is_correct boolean;
+BEGIN
+  SELECT * INTO v_quiz FROM friendship_quizzes WHERE code = lower(trim(p_code));
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Quiz not found');
+  END IF;
+
+  SELECT answer_key INTO v_answer_key FROM friendship_quiz_secrets WHERE quiz_id = v_quiz.id;
+  IF v_answer_key IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Secret answer key missing');
+  END IF;
+
+  v_correct_opt := (v_answer_key ->> p_question_index)::int;
+  v_is_correct := (v_correct_opt = p_selected_option);
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'is_correct', v_is_correct,
+    'correct_option', v_correct_opt
+  );
+END;
+$$;
+
+-- RPC 3: Submit complete quiz & authoritative deduplicated score (keep highest)
+CREATE OR REPLACE FUNCTION submit_friendship_quiz(
+  p_code text,
+  p_player_name text,
+  p_answers jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_quiz friendship_quizzes%ROWTYPE;
+  v_answer_key jsonb;
+  v_score int := 0;
+  v_total int;
+  v_idx int;
+  v_correct_val int;
+  v_selected_val int;
+  v_norm_name text;
+  v_existing friendship_submissions%ROWTYPE;
+BEGIN
+  SELECT * INTO v_quiz FROM friendship_quizzes WHERE code = lower(trim(p_code));
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Quiz not found');
+  END IF;
+
+  SELECT answer_key INTO v_answer_key FROM friendship_quiz_secrets WHERE quiz_id = v_quiz.id;
+  IF v_answer_key IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'message', 'Secret answer key missing');
+  END IF;
+
+  v_total := jsonb_array_length(v_answer_key);
+
+  -- Authoritative score calculation
+  FOR v_idx IN 0..(v_total - 1) LOOP
+    v_correct_val := (v_answer_key ->> v_idx)::int;
+    v_selected_val := (p_answers ->> v_idx)::int;
+    IF v_correct_val IS NOT NULL AND v_selected_val IS NOT NULL AND v_correct_val = v_selected_val THEN
+      v_score := v_score + 1;
+    END IF;
+  END LOOP;
+
+  v_norm_name := lower(trim(p_player_name));
+  IF length(v_norm_name) < 1 THEN
+    v_norm_name := 'player';
+  END IF;
+
+  -- Deduplication: Keep ONLY highest score
+  SELECT * INTO v_existing FROM friendship_submissions
+  WHERE quiz_id = v_quiz.id AND player_name_normalized = v_norm_name;
+
+  IF FOUND THEN
+    IF v_score > v_existing.score THEN
+      -- Higher score achieved: update score and created_at
+      UPDATE friendship_submissions
+      SET score = v_score,
+          total = v_total,
+          player_name = trim(p_player_name),
+          created_at = now()
+      WHERE id = v_existing.id;
+    END IF;
+  ELSE
+    INSERT INTO friendship_submissions (quiz_id, player_name, player_name_normalized, score, total)
+    VALUES (v_quiz.id, trim(p_player_name), v_norm_name, v_score, v_total);
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'score', v_score,
+    'total', v_total
+  );
+END;
+$$;

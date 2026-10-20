@@ -110,35 +110,34 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
 
   // Timer percentage (30s max duration)
   const timerPercent = Math.min(100, Math.max(0, (timeRemaining / 30) * 100));
-  // Color-shift thresholds: green 30s→15s, amber 15s→7s, red under 7s (pulsing)
   const isRed = timeRemaining < 7;
   const isAmber = timeRemaining >= 7 && timeRemaining <= 15;
 
   return (
-    <div className="w-full max-w-lg mx-auto px-4 py-4 space-y-4 animate-fade-in">
+    <div className="w-full max-w-lg mx-auto px-4 py-4 space-y-4 animate-fade-in text-slate-800">
       {/* 1. Header Bar: Category & Turn Timer Bar */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-lg backdrop-blur-sm">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="text-lg">{categoryInfo.icon}</span>
+            <span className="text-xl">{categoryInfo.icon}</span>
             <div>
-              <span className="font-bold text-xs text-white uppercase tracking-wider">
+              <span className="font-black text-xs text-[#0b2545] uppercase tracking-wider">
                 {categoryInfo.name}
               </span>
-              <span className="text-[10px] text-slate-400 block">
+              <span className="text-[10px] text-slate-500 block font-medium">
                 Round {usedWordsList.length + 1}
               </span>
             </div>
           </div>
 
-          {/* Numerical Timer Badge: Green 30s-15s, Amber 15s-7s, Red <7s (pulsing) */}
+          {/* Numerical Timer Badge */}
           <div
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold transition-all border ${
               isRed
-                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse scale-105'
+                ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse scale-105'
                 : isAmber
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
             }`}
           >
             <Clock className={`w-3.5 h-3.5 ${isRed ? 'animate-spin' : ''}`} />
@@ -147,14 +146,14 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
         </div>
 
         {/* Visual Progress Countdown Bar */}
-        <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
           <div
             className={`h-full transition-all duration-500 rounded-full ${
               isRed
-                ? 'bg-gradient-to-r from-rose-600 to-red-500'
+                ? 'bg-gradient-to-r from-rose-500 to-red-600'
                 : isAmber
-                ? 'bg-gradient-to-r from-amber-500 to-orange-500'
-                : 'bg-gradient-to-r from-emerald-500 via-teal-500 to-green-400'
+                ? 'bg-gradient-to-r from-amber-400 to-orange-500'
+                : 'bg-gradient-to-r from-[#1f9d55] to-[#3b4cca]'
             }`}
             style={{ width: `${timerPercent}%` }}
           />
@@ -163,23 +162,23 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
 
       {/* 2. Main Game Arena Card */}
       <div
-        className={`rounded-3xl p-6 shadow-2xl backdrop-blur-md border transition-all duration-300 ${
+        className={`bg-white rounded-3xl p-6 shadow-sm border transition-all duration-300 ${
           isMyTurn
-            ? 'bg-gradient-to-b from-indigo-950/60 to-slate-900/90 border-indigo-500/50 shadow-indigo-500/10 ring-2 ring-indigo-500/20'
-            : 'bg-slate-900/90 border-slate-800'
+            ? 'border-[#3b4cca] shadow-md ring-2 ring-blue-100'
+            : 'border-slate-200'
         }`}
       >
         {/* Turn Status Banner */}
         <div className="text-center mb-5">
           {isMyTurn ? (
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-xs font-bold animate-pulse">
-              <Flame className="w-3.5 h-3.5 text-amber-400" />
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-[#3b4cca] text-xs font-bold animate-pulse">
+              <Flame className="w-4 h-4 text-amber-500" />
               <span>YOUR TURN!</span>
             </div>
           ) : (
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/80 text-slate-400 text-xs font-medium">
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-xs font-medium">
               <span>Waiting for</span>
-              <strong className="text-slate-200">
+              <strong className="text-[#0b2545]">
                 {currentTurnPlayer ? currentTurnPlayer.display_name : 'Next Player'}
               </strong>
             </div>
@@ -190,30 +189,31 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
         <div className="text-center py-2 mb-6">
           {requiredLetter ? (
             <div className="space-y-2">
-              <div className="text-xs uppercase tracking-widest font-semibold text-slate-400">
+              <div className="text-xs uppercase tracking-widest font-bold text-slate-400">
                 Word Must Start With
               </div>
-              <div className="inline-block p-4 rounded-3xl bg-gradient-to-tr from-indigo-600/30 via-purple-600/20 to-pink-600/30 border border-indigo-500/40 shadow-inner">
-                <span className="text-6xl sm:text-7xl font-black font-mono tracking-tight text-white drop-shadow-lg">
+              <div className="inline-block p-4 sm:p-5 rounded-3xl bg-gradient-to-tr from-blue-50 to-indigo-100 border border-blue-200 shadow-inner">
+                <span className="text-6xl sm:text-7xl font-black font-mono tracking-tight text-[#0b2545]">
                   {requiredLetter}
                 </span>
               </div>
+
               {lastSubmittedWord && (
-                <div className="text-xs text-slate-400 mt-2 flex items-center justify-center gap-1.5">
+                <div className="text-xs text-slate-500 mt-2 flex items-center justify-center gap-1.5 font-medium">
                   <span>From</span>
-                  <span className="font-semibold text-indigo-300 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800">
+                  <span className="font-bold text-[#3b4cca] bg-slate-100 px-2.5 py-0.5 rounded-md border border-slate-200">
                     {lastSubmittedWord}
                   </span>
                   <span>➔</span>
-                  <span className="font-bold text-amber-400">{requiredLetter}</span>
+                  <span className="font-black text-amber-600">{requiredLetter}</span>
                 </div>
               )}
             </div>
           ) : (
-            <div className="space-y-1.5 py-4">
+            <div className="space-y-2 py-4">
               <div className="text-4xl">🚀</div>
-              <h3 className="font-bold text-white text-base">First Word of the Chain!</h3>
-              <p className="text-xs text-slate-400 max-w-xs mx-auto">
+              <h3 className="font-bold text-[#0b2545] text-base">First Word of the Chain!</h3>
+              <p className="text-xs text-slate-500 max-w-xs mx-auto">
                 Enter any valid {categoryInfo.name.toLowerCase()} to start the letter chain.
               </p>
             </div>
@@ -238,12 +238,12 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck="false"
-                className="w-full bg-slate-950 border-2 border-indigo-500/70 focus:border-indigo-400 rounded-2xl px-4 py-3.5 text-base sm:text-lg font-medium text-white placeholder-slate-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/20 transition shadow-inner"
+                className="w-full bg-[#f8fafc] border-2 border-slate-300 focus:border-[#3b4cca] rounded-2xl px-4 py-3.5 text-base sm:text-lg font-bold text-[#0b2545] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-100 transition shadow-inner"
               />
               <button
                 type="submit"
                 disabled={submitting || !inputWord.trim()}
-                className="absolute right-2 top-2 bottom-2 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl font-semibold text-xs sm:text-sm transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20 disabled:opacity-40"
+                className="absolute right-2 top-2 bottom-2 px-4 bg-[#1f9d55] hover:bg-[#178044] text-white rounded-xl font-bold text-xs sm:text-sm transition flex items-center gap-1.5 shadow-sm disabled:opacity-40"
               >
                 {submitting ? (
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -259,29 +259,29 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
             {/* Instant Validation Hint */}
             {localFeedback && (
               <div
-                className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${
+                className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl border ${
                   localFeedback.valid
-                    ? 'text-emerald-300 bg-emerald-950/40 border border-emerald-800/40'
-                    : 'text-rose-300 bg-rose-950/40 border border-rose-800/40'
+                    ? 'text-[#1f9d55] bg-emerald-50 border-emerald-200'
+                    : 'text-rose-600 bg-rose-50 border-rose-200'
                 }`}
               >
                 {localFeedback.valid ? (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#1f9d55] shrink-0" />
                 ) : (
-                  <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                 )}
-                <span>{localFeedback.message}</span>
+                <span className="font-semibold">{localFeedback.message}</span>
               </div>
             )}
           </form>
         ) : (
-          <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl text-center space-y-1">
-            <div className="text-xs text-slate-400">
+          <div className="p-4 bg-[#f8fafc] border border-slate-200 rounded-2xl text-center space-y-1">
+            <div className="text-xs text-slate-500 font-medium">
               {currentTurnPlayer
                 ? `${currentTurnPlayer.display_name} is typing...`
                 : 'Waiting for player...'}
             </div>
-            <div className="text-[11px] text-slate-500">
+            <div className="text-[11px] text-slate-400">
               Get ready! Your turn is coming up next.
             </div>
           </div>
@@ -289,17 +289,17 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
 
         {/* Error notification */}
         {error && (
-          <div className="mt-3 p-3 bg-rose-950/50 border border-rose-800/50 rounded-xl text-rose-300 text-xs flex items-center gap-2 animate-shake">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2 animate-shake">
+            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
             <span>{error}</span>
           </div>
         )}
       </div>
 
       {/* 5. Player Roster Bar (Active vs Eliminated) */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-lg backdrop-blur-sm">
-        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-1">
-          Turn Rotation & Status
+      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
+        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 px-1">
+          Turn Rotation &amp; Status
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {orderedPlayers.map((player) => {
@@ -311,22 +311,22 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
             return (
               <div
                 key={player.id}
-                className={`p-2.5 rounded-xl border transition-all text-xs flex items-center justify-between ${
+                className={`p-2.5 rounded-2xl border transition-all text-xs flex items-center justify-between shadow-2xs ${
                   isElim
-                    ? 'bg-slate-950/40 border-slate-850 text-slate-600 opacity-60 line-through'
+                    ? 'bg-slate-50 border-slate-200 text-slate-400 opacity-60 line-through'
                     : isTurn
-                    ? 'bg-indigo-950/50 border-indigo-500 text-white ring-1 ring-indigo-500/50 shadow'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-300'
+                    ? 'bg-blue-50/80 border-[#3b4cca] text-[#0b2545] font-bold ring-1 ring-blue-300'
+                    : 'bg-[#f8fafc] border-slate-200 text-slate-700 font-medium'
                 }`}
               >
                 <div className="flex items-center gap-2 overflow-hidden">
                   <div
                     className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
                       isElim
-                        ? 'bg-slate-800 text-slate-500'
+                        ? 'bg-slate-200 text-slate-400'
                         : isTurn
-                        ? 'bg-indigo-600 text-white animate-pulse'
-                        : 'bg-slate-800 text-slate-300'
+                        ? 'bg-[#3b4cca] text-white animate-pulse'
+                        : 'bg-slate-200 text-slate-600'
                     }`}
                   >
                     {player.display_name.charAt(0).toUpperCase()}
@@ -337,12 +337,12 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
                 </div>
 
                 {isElim && (
-                  <span className="text-[10px] text-rose-400 no-underline font-semibold ml-1">
+                  <span className="text-[10px] text-rose-500 no-underline font-bold ml-1">
                     OUT
                   </span>
                 )}
                 {isTurn && !isElim && (
-                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping ml-1" />
+                  <span className="w-2 h-2 rounded-full bg-[#3b4cca] animate-ping ml-1" />
                 )}
               </div>
             );

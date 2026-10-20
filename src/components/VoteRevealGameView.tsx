@@ -64,12 +64,12 @@ export const VoteRevealGameView: React.FC = () => {
   // Avatar color generator based on player name
   const getAvatarColor = (name: string) => {
     const colors = [
-      'from-indigo-500 to-purple-600',
-      'from-pink-500 to-rose-600',
+      'from-blue-600 to-indigo-700',
+      'from-pink-600 to-rose-700',
       'from-amber-500 to-orange-600',
-      'from-emerald-500 to-teal-600',
-      'from-cyan-500 to-blue-600',
-      'from-violet-500 to-fuchsia-600',
+      'from-emerald-600 to-teal-700',
+      'from-cyan-600 to-blue-700',
+      'from-violet-600 to-fuchsia-700',
     ];
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
@@ -103,22 +103,22 @@ export const VoteRevealGameView: React.FC = () => {
   const isCritical = timeRemaining <= 3;
 
   return (
-    <div className="w-full max-w-lg mx-auto px-4 py-4 space-y-4 animate-fade-in">
+    <div className="w-full max-w-lg mx-auto px-4 py-4 space-y-4 animate-fade-in text-slate-800">
       {/* 1. Header Bar: Engine, Category, Round & Timer Bar */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-lg backdrop-blur-sm">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <span className="text-xl">{categoryInfo.icon}</span>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-xs text-white uppercase tracking-wider">
+                <span className="font-black text-xs text-[#0b2545] uppercase tracking-wider">
                   Would You Rather
                 </span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
+                <span className="text-[10px] px-2 py-0.2 rounded-full bg-blue-50 text-[#3b4cca] font-bold border border-blue-200">
                   {categoryInfo.name}
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 block">
+              <span className="text-[10px] text-slate-500 block font-medium">
                 Round {roundNumber} • {totalVotesCast}/{totalActivePlayers} Voted
               </span>
             </div>
@@ -127,20 +127,20 @@ export const VoteRevealGameView: React.FC = () => {
           {/* Timer or Status Badge */}
           {!isRevealed ? (
             <div
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold transition-all border ${
                 isCritical
-                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse scale-105'
+                  ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse scale-105'
                   : isUrgent
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                  : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                  : 'bg-blue-50 text-[#3b4cca] border-blue-200'
               }`}
             >
               <Clock className={`w-3.5 h-3.5 ${isCritical ? 'animate-spin' : ''}`} />
               <span>{timeRemaining}s</span>
             </div>
           ) : (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
-              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+            <div className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+              <Sparkles className="w-3.5 h-3.5 text-purple-500" />
               <span>Revealed</span>
             </div>
           )}
@@ -148,14 +148,14 @@ export const VoteRevealGameView: React.FC = () => {
 
         {/* Visual Progress Countdown Bar */}
         {!isRevealed && (
-          <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
             <div
               className={`h-full transition-all duration-500 rounded-full ${
                 isCritical
-                  ? 'bg-gradient-to-r from-rose-600 to-red-500'
+                  ? 'bg-gradient-to-r from-rose-500 to-red-600'
                   : isUrgent
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500'
-                  : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500'
+                  ? 'bg-gradient-to-r from-amber-400 to-orange-500'
+                  : 'bg-gradient-to-r from-[#3b4cca] to-[#f43f5e]'
               }`}
               style={{ width: `${timerPercent}%` }}
             />
@@ -164,24 +164,22 @@ export const VoteRevealGameView: React.FC = () => {
       </div>
 
       {/* 2. Main Game Arena Card */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl backdrop-blur-md relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-
+      <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-5">
         {/* Prompt Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold mb-3">
-            <HelpCircle className="w-3.5 h-3.5 text-indigo-400" />
+        <div className="text-center space-y-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-[#3b4cca] text-xs font-bold">
+            <HelpCircle className="w-3.5 h-3.5 text-[#3b4cca]" />
             <span>THE DILEMMA</span>
           </div>
 
-          <h2 className="text-xl sm:text-2xl font-black text-white leading-snug tracking-tight max-w-md mx-auto">
+          <h2 className="text-xl sm:text-2xl font-black text-[#0b2545] leading-snug tracking-tight max-w-md mx-auto">
             {currentPrompt.prompt_text}
           </h2>
         </div>
 
         {/* Error notification */}
         {error && (
-          <div className="mb-4 p-3 bg-rose-950/50 border border-rose-800/50 rounded-xl text-rose-300 text-xs flex items-center gap-2 animate-shake">
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
             <span>{error}</span>
           </div>
         )}
@@ -189,39 +187,37 @@ export const VoteRevealGameView: React.FC = () => {
         {/* --- PHASE 1: VOTING SCREEN --- */}
         {!isRevealed ? (
           <div className="space-y-4">
-            <p className="text-center text-xs text-slate-400">
+            <p className="text-center text-xs text-slate-500">
               Pick your answer below. Votes remain secret until everyone has chosen!
             </p>
 
-            <div className="grid grid-cols-1 gap-3.5">
+            <div className="grid grid-cols-1 gap-3">
               {/* Option A Button */}
               <button
                 type="button"
                 onClick={() => handleVote('A')}
                 disabled={Boolean(submittingVote)}
-                className={`relative w-full p-5 rounded-2xl border-2 text-left transition-all duration-200 group flex items-start gap-4 ${
+                className={`w-full p-4 sm:p-5 rounded-2xl border-2 text-left transition flex items-start gap-4 ${
                   localVote === 'A'
-                    ? 'bg-gradient-to-r from-indigo-950/80 to-blue-950/80 border-indigo-500 shadow-lg shadow-indigo-500/20 ring-2 ring-indigo-500/30'
-                    : 'bg-slate-950/70 hover:bg-slate-950 border-slate-800 hover:border-indigo-500/60 text-slate-200'
+                    ? 'bg-blue-50 border-[#3b4cca] ring-2 ring-blue-200 shadow-sm'
+                    : 'bg-[#f8fafc] border-slate-200 hover:border-blue-300 text-slate-800'
                 }`}
               >
                 <div
                   className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 transition ${
-                    localVote === 'A'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
+                    localVote === 'A' ? 'bg-[#3b4cca] text-white shadow-sm' : 'bg-slate-200 text-[#3b4cca]'
                   }`}
                 >
                   A
                 </div>
                 <div className="flex-1">
-                  <div className="text-base font-bold text-white mb-0.5">{optionA}</div>
-                  <div className="text-[11px] text-slate-400">
-                    {localVote === 'A' ? 'Your selected choice (Tap to change)' : 'Tap to choose Option A'}
+                  <div className="text-base font-bold text-[#0b2545] mb-0.5">{optionA}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {localVote === 'A' ? 'Your choice (Tap to change)' : 'Tap to choose Option A'}
                   </div>
                 </div>
                 {localVote === 'A' && (
-                  <CheckCircle2 className="w-6 h-6 text-indigo-400 shrink-0 mt-1 animate-scale-in" />
+                  <CheckCircle2 className="w-6 h-6 text-[#3b4cca] shrink-0 mt-1" />
                 )}
               </button>
 
@@ -230,29 +226,27 @@ export const VoteRevealGameView: React.FC = () => {
                 type="button"
                 onClick={() => handleVote('B')}
                 disabled={Boolean(submittingVote)}
-                className={`relative w-full p-5 rounded-2xl border-2 text-left transition-all duration-200 group flex items-start gap-4 ${
+                className={`w-full p-4 sm:p-5 rounded-2xl border-2 text-left transition flex items-start gap-4 ${
                   localVote === 'B'
-                    ? 'bg-gradient-to-r from-pink-950/80 to-purple-950/80 border-pink-500 shadow-lg shadow-pink-500/20 ring-2 ring-pink-500/30'
-                    : 'bg-slate-950/70 hover:bg-slate-950 border-slate-800 hover:border-pink-500/60 text-slate-200'
+                    ? 'bg-rose-50 border-[#f43f5e] ring-2 ring-rose-200 shadow-sm'
+                    : 'bg-[#f8fafc] border-slate-200 hover:border-rose-300 text-slate-800'
                 }`}
               >
                 <div
                   className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 transition ${
-                    localVote === 'B'
-                      ? 'bg-pink-600 text-white shadow-md'
-                      : 'bg-slate-800 text-pink-400 group-hover:bg-pink-600 group-hover:text-white'
+                    localVote === 'B' ? 'bg-[#f43f5e] text-white shadow-sm' : 'bg-slate-200 text-[#f43f5e]'
                   }`}
                 >
                   B
                 </div>
                 <div className="flex-1">
-                  <div className="text-base font-bold text-white mb-0.5">{optionB}</div>
-                  <div className="text-[11px] text-slate-400">
-                    {localVote === 'B' ? 'Your selected choice (Tap to change)' : 'Tap to choose Option B'}
+                  <div className="text-base font-bold text-[#0b2545] mb-0.5">{optionB}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {localVote === 'B' ? 'Your choice (Tap to change)' : 'Tap to choose Option B'}
                   </div>
                 </div>
                 {localVote === 'B' && (
-                  <CheckCircle2 className="w-6 h-6 text-pink-400 shrink-0 mt-1 animate-scale-in" />
+                  <CheckCircle2 className="w-6 h-6 text-[#f43f5e] shrink-0 mt-1" />
                 )}
               </button>
             </div>
@@ -260,15 +254,15 @@ export const VoteRevealGameView: React.FC = () => {
             {/* Voting Status Toast */}
             <div className="pt-2 text-center">
               {localVote ? (
-                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-950/50 border border-emerald-800/60 text-emerald-300 text-xs font-medium">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#1f9d55] text-xs font-bold">
+                  <CheckCircle2 className="w-4 h-4 text-[#1f9d55]" />
                   <span>
                     Your vote is saved! Waiting for remaining players ({totalVotesCast}/{totalActivePlayers})
                   </span>
                 </div>
               ) : (
-                <div className="text-xs text-slate-400">
-                  Votes submitted so far: <strong className="text-slate-200">{totalVotesCast}</strong> / {totalActivePlayers}
+                <div className="text-xs text-slate-500">
+                  Votes submitted so far: <strong className="text-slate-800">{totalVotesCast}</strong> / {totalActivePlayers}
                 </div>
               )}
             </div>
@@ -279,22 +273,22 @@ export const VoteRevealGameView: React.FC = () => {
             {/* Split Comparison Percentage Bar */}
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-bold px-1">
-                <span className="text-indigo-400">
+                <span className="text-[#3b4cca]">
                   Option A: {percentA}% ({votesForA.length} {votesForA.length === 1 ? 'vote' : 'votes'})
                 </span>
-                <span className="text-pink-400">
+                <span className="text-[#f43f5e]">
                   Option B: {percentB}% ({votesForB.length} {votesForB.length === 1 ? 'vote' : 'votes'})
                 </span>
               </div>
 
               {/* Progress Split Bar */}
-              <div className="h-4 w-full bg-slate-950 rounded-full overflow-hidden flex border border-slate-800 p-0.5">
+              <div className="h-4 w-full bg-slate-100 rounded-full overflow-hidden flex border border-slate-200 p-0.5">
                 <div
-                  className="h-full bg-gradient-to-r from-indigo-600 to-blue-500 rounded-l-full transition-all duration-700"
+                  className="h-full bg-gradient-to-r from-blue-600 to-[#3b4cca] rounded-l-full transition-all duration-700"
                   style={{ width: `${percentA}%` }}
                 />
                 <div
-                  className="h-full bg-gradient-to-r from-pink-500 to-rose-600 rounded-r-full transition-all duration-700"
+                  className="h-full bg-gradient-to-r from-pink-500 to-[#f43f5e] rounded-r-full transition-all duration-700"
                   style={{ width: `${percentB}%` }}
                 />
               </div>
@@ -306,28 +300,28 @@ export const VoteRevealGameView: React.FC = () => {
               <div
                 className={`p-4 rounded-2xl border ${
                   localVote === 'A'
-                    ? 'bg-indigo-950/40 border-indigo-500/50 ring-1 ring-indigo-500/30'
-                    : 'bg-slate-950/60 border-slate-800'
+                    ? 'bg-blue-50/70 border-blue-300 ring-1 ring-blue-300'
+                    : 'bg-[#f8fafc] border-slate-200'
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="px-2 py-0.5 rounded-lg bg-indigo-600 text-white font-black text-xs">
+                  <span className="px-2 py-0.5 rounded-lg bg-[#3b4cca] text-white font-black text-xs">
                     OPTION A
                   </span>
-                  <span className="text-xs font-bold text-indigo-300">
+                  <span className="text-xs font-bold text-[#3b4cca]">
                     {votesForA.length} {votesForA.length === 1 ? 'player' : 'players'}
                   </span>
                 </div>
 
-                <div className="font-bold text-sm text-white mb-3">{optionA}</div>
+                <div className="font-bold text-sm text-[#0b2545] mb-3">{optionA}</div>
 
                 {/* Players who voted A */}
-                <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
-                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-1">
+                <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                  <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">
                     Voted By:
                   </div>
                   {votesForA.length === 0 ? (
-                    <div className="text-xs text-slate-500 italic">No votes</div>
+                    <div className="text-xs text-slate-400 italic">No votes</div>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {votesForA.map((v) => {
@@ -338,10 +332,10 @@ export const VoteRevealGameView: React.FC = () => {
                         return (
                           <div
                             key={v.player_id}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium border ${
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
                               isMe
-                                ? 'bg-indigo-600/30 border-indigo-500/60 text-white font-bold'
-                                : 'bg-slate-900 border-slate-800 text-slate-300'
+                                ? 'bg-blue-100 border-blue-300 text-[#0b2545]'
+                                : 'bg-white border-slate-200 text-slate-700'
                             }`}
                           >
                             <div
@@ -366,28 +360,28 @@ export const VoteRevealGameView: React.FC = () => {
               <div
                 className={`p-4 rounded-2xl border ${
                   localVote === 'B'
-                    ? 'bg-pink-950/40 border-pink-500/50 ring-1 ring-pink-500/30'
-                    : 'bg-slate-950/60 border-slate-800'
+                    ? 'bg-rose-50/70 border-rose-300 ring-1 ring-rose-300'
+                    : 'bg-[#f8fafc] border-slate-200'
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="px-2 py-0.5 rounded-lg bg-pink-600 text-white font-black text-xs">
+                  <span className="px-2 py-0.5 rounded-lg bg-[#f43f5e] text-white font-black text-xs">
                     OPTION B
                   </span>
-                  <span className="text-xs font-bold text-pink-300">
+                  <span className="text-xs font-bold text-[#f43f5e]">
                     {votesForB.length} {votesForB.length === 1 ? 'player' : 'players'}
                   </span>
                 </div>
 
-                <div className="font-bold text-sm text-white mb-3">{optionB}</div>
+                <div className="font-bold text-sm text-[#0b2545] mb-3">{optionB}</div>
 
                 {/* Players who voted B */}
-                <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
-                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-1">
+                <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                  <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1">
                     Voted By:
                   </div>
                   {votesForB.length === 0 ? (
-                    <div className="text-xs text-slate-500 italic">No votes</div>
+                    <div className="text-xs text-slate-400 italic">No votes</div>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {votesForB.map((v) => {
@@ -398,10 +392,10 @@ export const VoteRevealGameView: React.FC = () => {
                         return (
                           <div
                             key={v.player_id}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium border ${
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
                               isMe
-                                ? 'bg-pink-600/30 border-pink-500/60 text-white font-bold'
-                                : 'bg-slate-900 border-slate-800 text-slate-300'
+                                ? 'bg-rose-100 border-rose-300 text-rose-950'
+                                : 'bg-white border-slate-200 text-slate-700'
                             }`}
                           >
                             <div
@@ -425,18 +419,15 @@ export const VoteRevealGameView: React.FC = () => {
 
             {/* Host Actions (Next Round / End Game) */}
             {isHost ? (
-              <div className="pt-2 border-t border-slate-800 space-y-2">
+              <div className="pt-3 border-t border-slate-100 space-y-2">
                 <button
                   type="button"
                   onClick={handleNextRound}
                   disabled={advancingRound}
-                  className="w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="w-full py-3.5 px-6 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-bold text-sm shadow-md shadow-emerald-700/20 transition flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
                 >
                   {advancingRound ? (
-                    <span className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Loading Next Dilemma...
-                    </span>
+                    <span>Loading Next Dilemma...</span>
                   ) : (
                     <>
                       <span>Next Round</span>
@@ -449,15 +440,15 @@ export const VoteRevealGameView: React.FC = () => {
                   type="button"
                   onClick={handleEndGame}
                   disabled={endingGame}
-                  className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-medium transition flex items-center justify-center gap-2"
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full text-xs font-semibold transition flex items-center justify-center gap-2"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Return to Lobby</span>
                 </button>
               </div>
             ) : (
-              <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-2xl text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-                <div className="w-2.5 h-2.5 bg-purple-500 rounded-full animate-ping" />
+              <div className="p-3.5 bg-[#f8fafc] border border-slate-200 rounded-2xl text-center text-xs text-slate-500 font-medium flex items-center justify-center gap-2">
+                <div className="w-2.5 h-2.5 bg-[#3b4cca] rounded-full animate-ping" />
                 <span>Waiting for the host to start the next round...</span>
               </div>
             )}
@@ -466,15 +457,15 @@ export const VoteRevealGameView: React.FC = () => {
       </div>
 
       {/* 3. Player Roster Status Card */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 shadow-lg backdrop-blur-sm">
-        <div className="flex items-center justify-between mb-3 px-1">
+      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-indigo-400" />
-            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-300">
+            <Users className="w-4 h-4 text-[#3b4cca]" />
+            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-600">
               Player Voting Status
             </h3>
           </div>
-          <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
+          <span className="text-[10px] text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full font-bold">
             {totalVotesCast}/{totalActivePlayers} completed
           </span>
         </div>
@@ -488,10 +479,10 @@ export const VoteRevealGameView: React.FC = () => {
             return (
               <div
                 key={player.id}
-                className={`p-2.5 rounded-xl border text-xs flex items-center justify-between transition-all ${
+                className={`p-2.5 rounded-2xl border text-xs flex items-center justify-between transition-all shadow-2xs ${
                   hasVoted
-                    ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-200'
-                    : 'bg-slate-950/60 border-slate-800 text-slate-400'
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold'
+                    : 'bg-[#f8fafc] border-slate-200 text-slate-600'
                 }`}
               >
                 <div className="flex items-center gap-2 overflow-hidden">
@@ -511,16 +502,16 @@ export const VoteRevealGameView: React.FC = () => {
                   <span
                     className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
                       playerVoteObj.choice === 'A' || playerVoteObj.choice === optionA
-                        ? 'bg-indigo-600/40 text-indigo-300'
-                        : 'bg-pink-600/40 text-pink-300'
+                        ? 'bg-blue-100 text-[#3b4cca]'
+                        : 'bg-rose-100 text-[#f43f5e]'
                     }`}
                   >
                     {playerVoteObj.choice === 'A' || playerVoteObj.choice === optionA ? 'A' : 'B'}
                   </span>
                 ) : hasVoted ? (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 ml-1" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#1f9d55] shrink-0 ml-1" />
                 ) : (
-                  <span className="text-[10px] text-amber-400/80 italic ml-1">Voting</span>
+                  <span className="text-[10px] text-amber-600/80 italic ml-1">Voting</span>
                 )}
               </div>
             );

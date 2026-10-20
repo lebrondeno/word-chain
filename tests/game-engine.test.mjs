@@ -25,6 +25,23 @@ const {
 
 const { soundManager } = await jiti.import('../src/lib/audio.ts');
 
+const {
+  QUIZ_LENGTH_OPTIONS,
+  DEFAULT_QUIZ_LENGTH,
+  MAX_CUSTOM_QUESTIONS,
+  FRIENDSHIP_QUESTION_BANK,
+} = await jiti.import('../src/data/friendshipPrompts.ts');
+
+const {
+  sanitizeQuestions,
+  extractAnswerKey,
+  normalizePlayerName,
+  generateQuizCode,
+  sanitizeQuizCode,
+  sortAndRankSubmissions,
+  deduplicateSubmissions,
+} = await jiti.import('../src/lib/friendshipService.ts');
+
 test('Word Normalization and Letter Extraction', () => {
   assert.equal(normalizeWord('  Tokyo  '), 'tokyo');
   assert.equal(normalizeWord('São Paulo'), 'sao paulo');
@@ -129,4 +146,229 @@ test('Sound Manager Safe Fallback (SSR / Headless)', () => {
   assert.doesNotThrow(() => soundManager.playWinner());
   assert.doesNotThrow(() => soundManager.playVote());
   assert.doesNotThrow(() => soundManager.playReveal());
+});
+
+test('Friendship Test - Question Bank & Quiz Configuration', () => {
+  assert.deepEqual([...QUIZ_LENGTH_OPTIONS], [10, 15, 20]);
+  assert.equal(DEFAULT_QUIZ_LENGTH, 10);
+  assert.equal(MAX_CUSTOM_QUESTIONS, 3);
+  assert.ok(FRIENDSHIP_QUESTION_BANK.length >= 30, 'Bank must have at least 30 questions');
+
+  // Verify bank items structure
+  const seenIds = new Set();
+  for (const q of FRIENDSHIP_QUESTION_BANK) {
+    assert.ok(q.id && !seenIds.has(q.id), `Duplicate or missing ID: ${q.id}`);
+    seenIds.add(q.id);
+    assert.ok(q.prompt && q.prompt.length > 5, 'Prompt too short');
+    assert.equal(q.options.length, 4, 'Each question must have 4 options');
+    const uniqueOptions = new Set(q.options.map((o) => o.trim().toLowerCase()));
+    assert.equal(uniqueOptions.size, 4, `Question ${q.id} has duplicate options`);
+    assert.ok(
+      ['habits', 'food', 'travel', 'reactions', 'preferences', 'personality'].includes(q.category),
+      `Invalid category ${q.category}`
+    );
+  }
+
+  // Quiz custom question cap simulation
+  const customQuestions = [];
+  function addCustomQuestion(prompt, options) {
+    if (customQuestions.length >= MAX_CUSTOM_QUESTIONS) {
+      throw new Error(`Cannot add more than ${MAX_CUSTOM_QUESTIONS} custom questions`);
+    }
+    customQuestions.push({ prompt, options });
+  }
+
+  assert.doesNotThrow(() => addCustomQuestion('Q1', ['a', 'b', 'c', 'd']));
+  assert.doesNotThrow(() => addCustomQuestion('Q2', ['a', 'b', 'c', 'd']));
+  assert.doesNotThrow(() => addCustomQuestion('Q3', ['a', 'b', 'c', 'd']));
+  assert.throws(() => addCustomQuestion('Q4', ['a', 'b', 'c', 'd']), /Cannot add more than 3/);
+  assert.equal(customQuestions.length, 3);
+});
+
+test('Friendship Test - Sanitized Question Payloads & Answer Key Extraction (Anti-Cheat)', () => {
+  const creatorQuestions = [
+    { id: 'q1', prompt: 'Prompt 1', options: ['A', 'B', 'C', 'D'], correctIndex: 2 },
+    { id: 'q2', prompt: 'Prompt 2', options: ['W', 'X', 'Y', 'Z'], correctIndex: 0, isCustom: true },
+    { id: 'q3', prompt: 'Prompt 3', options: ['1', '2', '3', '4'], correctIndex: 3 },
+  ];
+
+  // Answer key extraction
+  const answerKey = extractAnswerKey(creatorQuestions);
+  assert.deepEqual(answerKey, [2, 0, 3]);
+
+  // Sanitized questions (no correctIndex exposed to public)
+  const sanitized = sanitizeQuestions(creatorQuestions);
+  assert.equal(sanitized.length, 3);
+  for (let i = 0; i < sanitized.length; i++) {
+    const item = sanitized[i];
+    assert.equal(item.id, creatorQuestions[i].id);
+    assert.equal(item.prompt, creatorQuestions[i].prompt);
+    assert.deepEqual(item.options, creatorQuestions[i].options);
+    assert.equal('correctIndex' in item, false, 'correctIndex must NOT be present in sanitized payload');
+    assert.equal(item.correctIndex, undefined);
+  }
+});
+
+test('Friendship Test - Leaderboard Sorting with Strict Tie-Breaking & Dynamic Ranking', () => {
+  const submissions = [
+    {
+      id: 'sub-1',
+      player_name: 'Charlie',
+      player_name_normalized: 'charlie',
+      score: 8,
+      total: 10,
+      created_at: '2026-10-20T12:00:00.000Z',
+    },
+    {
+      id: 'sub-2',
+      player_name: 'Alice',
+      player_name_normalized: 'alice',
+      score: 10,
+      total: 10,
+      created_at: '2026-10-20T14:00:00.000Z',
+    },
+    {
+      id: 'sub-3',
+      player_name: 'Bob',
+      player_name_normalized: 'bob',
+      score: 8,
+      total: 10,
+      created_at: '2026-10-20T11:00:00.000Z', // Earlier than Charlie!
+    },
+    {
+      id: 'sub-4',
+      player_name: 'Dave',
+      player_name_normalized: 'dave',
+      score: 5,
+      total: 10,
+      created_at: '2026-10-20T10:00:00.000Z',
+    },
+  ];
+
+  const ranked = sortAndRankSubmissions(submissions);
+
+  // Expected order:
+  // Rank 1: Alice (10/10)
+  // Rank 2: Bob (8/10, submitted at 11:00 - wins tie against Charlie)
+  // Rank 3: Charlie (8/10, submitted at 12:00)
+  // Rank 4: Dave (5/10)
+  assert.equal(ranked.length, 4);
+
+  assert.equal(ranked[0].player_name, 'Alice');
+  assert.equal(ranked[0].score, 10);
+  assert.equal(ranked[0].rank, 1);
+
+  assert.equal(ranked[1].player_name, 'Bob');
+  assert.equal(ranked[1].score, 8);
+  assert.equal(ranked[1].rank, 2);
+
+  assert.equal(ranked[2].player_name, 'Charlie');
+  assert.equal(ranked[2].score, 8);
+  assert.equal(ranked[2].rank, 3);
+
+  assert.equal(ranked[3].player_name, 'Dave');
+  assert.equal(ranked[3].score, 5);
+  assert.equal(ranked[3].rank, 4);
+});
+
+test('Friendship Test - Repeat Attempt Deduplication (Highest Score Per Normalized Name)', () => {
+  let list = [];
+
+  // 1. Initial attempt by Alice: 6/10
+  const t1 = '2026-10-20T10:00:00.000Z';
+  list = deduplicateSubmissions(list, {
+    playerName: 'Alice',
+    score: 6,
+    total: 10,
+    createdAt: t1,
+  });
+
+  assert.equal(list.length, 1);
+  assert.equal(list[0].player_name, 'Alice');
+  assert.equal(list[0].player_name_normalized, 'alice');
+  assert.equal(list[0].score, 6);
+  assert.equal(list[0].created_at, t1);
+  assert.equal(list[0].rank, 1);
+
+  // 2. Alice attempts again with a lower score (4/10): Should NOT overwrite
+  const t2 = '2026-10-20T11:00:00.000Z';
+  list = deduplicateSubmissions(list, {
+    playerName: 'alice',
+    score: 4,
+    total: 10,
+    createdAt: t2,
+  });
+
+  assert.equal(list.length, 1);
+  assert.equal(list[0].score, 6, 'Score must remain 6 after lower attempt');
+  assert.equal(list[0].created_at, t1, 'Timestamp must remain t1 when score did not improve');
+
+  // 3. Alice attempts again with equal score (6/10): Should NOT overwrite
+  const t3 = '2026-10-20T12:00:00.000Z';
+  list = deduplicateSubmissions(list, {
+    playerName: '  ALICE  ',
+    score: 6,
+    total: 10,
+    createdAt: t3,
+  });
+
+  assert.equal(list.length, 1);
+  assert.equal(list[0].score, 6);
+  assert.equal(list[0].created_at, t1);
+
+  // 4. Bob takes quiz: 8/10
+  const t4 = '2026-10-20T13:00:00.000Z';
+  list = deduplicateSubmissions(list, {
+    playerName: 'Bob',
+    score: 8,
+    total: 10,
+    createdAt: t4,
+  });
+
+  assert.equal(list.length, 2);
+  assert.equal(list[0].player_name, 'Bob');
+  assert.equal(list[0].rank, 1);
+  assert.equal(list[1].player_name, 'Alice');
+  assert.equal(list[1].rank, 2);
+
+  // 5. Alice attempts again with a different name 'Alice Wonder': Distinct entry
+  const t5 = '2026-10-20T14:00:00.000Z';
+  list = deduplicateSubmissions(list, {
+    playerName: 'Alice Wonder',
+    score: 9,
+    total: 10,
+    createdAt: t5,
+  });
+
+  assert.equal(list.length, 3);
+
+  // 6. Alice retries with exact normalized name 'alice' scoring 10/10: Strictly higher!
+  const t6 = '2026-10-20T15:00:00.000Z';
+  list = deduplicateSubmissions(list, {
+    playerName: 'alice',
+    score: 10,
+    total: 10,
+    createdAt: t6,
+  });
+
+  assert.equal(list.length, 3);
+  const aliceEntry = list.find((item) => item.player_name_normalized === 'alice');
+  assert.ok(aliceEntry);
+  assert.equal(aliceEntry.score, 10);
+  assert.equal(aliceEntry.created_at, t6);
+  assert.equal(aliceEntry.rank, 1);
+});
+
+test('Friendship Test - Quiz Code Generation and Sanitization', () => {
+  for (let i = 0; i < 50; i++) {
+    const code = generateQuizCode();
+    assert.equal(code.length, 5);
+    // Should not include ambiguous characters (0, O, 1, I, L)
+    assert.equal(/[0O1IL]/.test(code), false, `Quiz code ${code} had ambiguous character`);
+    assert.match(code, /^[A-Z0-9]{5}$/);
+  }
+
+  assert.equal(sanitizeQuizCode('abcde'), 'ABCDE');
+  assert.equal(sanitizeQuizCode('  xy-z99!  '), 'XYZ99');
+  assert.equal(normalizePlayerName('  Alex Mercer  '), 'alex mercer');
 });

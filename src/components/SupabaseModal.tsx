@@ -66,6 +66,32 @@ CREATE TABLE IF NOT EXISTS game_votes (
   UNIQUE(session_id, player_id, round_number)
 );
 
+CREATE TABLE IF NOT EXISTS friendship_quizzes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text UNIQUE NOT NULL,
+  creator_name text NOT NULL,
+  questions jsonb NOT NULL,
+  total_questions int NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS friendship_quiz_secrets (
+  quiz_id uuid PRIMARY KEY REFERENCES friendship_quizzes(id) ON DELETE CASCADE,
+  answer_key jsonb NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS friendship_submissions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  quiz_id uuid REFERENCES friendship_quizzes(id) ON DELETE CASCADE,
+  player_name text NOT NULL,
+  player_name_normalized text NOT NULL,
+  score int NOT NULL,
+  total int NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (quiz_id, player_name_normalized)
+);
+
 -- Enable Realtime (Idempotent)
 DO $$
 BEGIN
@@ -78,12 +104,18 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'game_votes') THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE game_votes;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'friendship_submissions') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE friendship_submissions;
+  END IF;
 END $$;
 
 -- Enable RLS & Allow public access
 ALTER TABLE game_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE game_players ENABLE ROW LEVEL SECURITY;
 ALTER TABLE game_votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE friendship_quizzes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE friendship_quiz_secrets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE friendship_submissions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Public sessions access" ON game_sessions;
 CREATE POLICY "Public sessions access" ON game_sessions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
@@ -91,6 +123,10 @@ DROP POLICY IF EXISTS "Public players access" ON game_players;
 CREATE POLICY "Public players access" ON game_players FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Public votes access" ON game_votes;
 CREATE POLICY "Public votes access" ON game_votes FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public friendship_quizzes access" ON friendship_quizzes;
+CREATE POLICY "Public friendship_quizzes access" ON friendship_quizzes FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public friendship_submissions access" ON friendship_submissions;
+CREATE POLICY "Public friendship_submissions access" ON friendship_submissions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 `;
     navigator.clipboard.writeText(sqlScript);
     setCopied(true);
