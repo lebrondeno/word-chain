@@ -56,10 +56,36 @@ CREATE INDEX IF NOT EXISTS idx_game_players_session_id ON game_players(session_i
 CREATE INDEX IF NOT EXISTS idx_game_prompts_engine_cat ON game_prompts(engine, category);
 CREATE INDEX IF NOT EXISTS idx_game_votes_session_round ON game_votes(session_id, round_number);
 
--- 3. Enable Realtime Replication
-ALTER PUBLICATION supabase_realtime ADD TABLE game_sessions;
-ALTER PUBLICATION supabase_realtime ADD TABLE game_players;
-ALTER PUBLICATION supabase_realtime ADD TABLE game_votes;
+-- 3. Enable Realtime Replication (Idempotent: only adds tables if not already in publication)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'game_sessions'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE game_sessions;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'game_players'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE game_players;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' 
+      AND schemaname = 'public' 
+      AND tablename = 'game_votes'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE game_votes;
+  END IF;
+END $$;
 
 -- 4. Enable Row Level Security (RLS)
 ALTER TABLE game_sessions ENABLE ROW LEVEL SECURITY;

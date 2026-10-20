@@ -42,8 +42,11 @@ CREATE TABLE IF NOT EXISTS game_sessions (
   used_words jsonb NOT NULL DEFAULT '[]'::jsonb,
   last_letter text,
   turn_deadline timestamptz,
+  game_config jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz DEFAULT now()
 );
+
+ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS game_config jsonb NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS game_players (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -53,16 +56,41 @@ CREATE TABLE IF NOT EXISTS game_players (
   joined_at timestamptz DEFAULT now()
 );
 
--- Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE game_sessions;
-ALTER PUBLICATION supabase_realtime ADD TABLE game_players;
+CREATE TABLE IF NOT EXISTS game_votes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid REFERENCES game_sessions(id) ON DELETE CASCADE,
+  player_id uuid REFERENCES game_players(id) ON DELETE CASCADE,
+  round_number int NOT NULL DEFAULT 1,
+  choice text NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(session_id, player_id, round_number)
+);
+
+-- Enable Realtime (Idempotent)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'game_sessions') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE game_sessions;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'game_players') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE game_players;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'game_votes') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE game_votes;
+  END IF;
+END $$;
 
 -- Enable RLS & Allow public access
 ALTER TABLE game_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE game_players ENABLE ROW LEVEL SECURITY;
+ALTER TABLE game_votes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Public sessions access" ON game_sessions;
 CREATE POLICY "Public sessions access" ON game_sessions FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public players access" ON game_players;
 CREATE POLICY "Public players access" ON game_players FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public votes access" ON game_votes;
+CREATE POLICY "Public votes access" ON game_votes FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 `;
     navigator.clipboard.writeText(sqlScript);
     setCopied(true);
