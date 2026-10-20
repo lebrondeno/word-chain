@@ -1,5 +1,6 @@
 -- ==========================================================
--- MULTIPLAYER WORD-CHAIN GAME SCHEMA & REALTIME SETUP
+-- MULTIPLAYER GAME PLATFORM SCHEMA & REALTIME SETUP
+-- Supports Word Chain & Vote & Reveal (Would You Rather)
 -- ==========================================================
 
 -- 1. Create Tables
@@ -15,8 +16,12 @@ CREATE TABLE IF NOT EXISTS game_sessions (
   used_words jsonb NOT NULL DEFAULT '[]'::jsonb,
   last_letter text,
   turn_deadline timestamptz,
+  game_config jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz DEFAULT now()
 );
+
+-- If game_config column doesn't exist yet on existing table, add it
+ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS game_config jsonb NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS game_players (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -26,17 +31,41 @@ CREATE TABLE IF NOT EXISTS game_players (
   joined_at timestamptz DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS game_prompts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  engine text NOT NULL,          -- 'vote_reveal' | 'trivia' | 'deduction' (future)
+  category text NOT NULL,        -- 'general' | 'boys' | 'church' | 'couples' | 'football' | 'bible' etc.
+  prompt_text text NOT NULL,
+  options jsonb,                 -- e.g. ["Option A", "Option B"] for fixed-choice prompts; null if options = player names
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS game_votes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid REFERENCES game_sessions(id) ON DELETE CASCADE,
+  player_id uuid REFERENCES game_players(id) ON DELETE CASCADE,
+  round_number int NOT NULL DEFAULT 1,
+  choice text NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(session_id, player_id, round_number)
+);
+
 -- 2. Indexes for high performance lookups
 CREATE INDEX IF NOT EXISTS idx_game_sessions_room_code ON game_sessions(room_code);
 CREATE INDEX IF NOT EXISTS idx_game_players_session_id ON game_players(session_id);
+CREATE INDEX IF NOT EXISTS idx_game_prompts_engine_cat ON game_prompts(engine, category);
+CREATE INDEX IF NOT EXISTS idx_game_votes_session_round ON game_votes(session_id, round_number);
 
 -- 3. Enable Realtime Replication
 ALTER PUBLICATION supabase_realtime ADD TABLE game_sessions;
 ALTER PUBLICATION supabase_realtime ADD TABLE game_players;
+ALTER PUBLICATION supabase_realtime ADD TABLE game_votes;
 
 -- 4. Enable Row Level Security (RLS)
 ALTER TABLE game_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE game_players ENABLE ROW LEVEL SECURITY;
+ALTER TABLE game_prompts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE game_votes ENABLE ROW LEVEL SECURITY;
 
 -- Allow public anonymous access (No Auth requirement: players join via room code)
 DROP POLICY IF EXISTS "Public sessions access" ON game_sessions;
@@ -53,12 +82,51 @@ CREATE POLICY "Public players access" ON game_players
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Public prompts access" ON game_prompts;
+CREATE POLICY "Public prompts access" ON game_prompts
+  FOR ALL
+  TO anon, authenticated
+  USING (true)
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public votes access" ON game_votes;
+CREATE POLICY "Public votes access" ON game_votes
+  FOR ALL
+  TO anon, authenticated
+  USING (true)
+  WITH CHECK (true);
+
+
+-- ==========================================================
+-- SEED DATA: GAME PROMPTS (Vote & Reveal / Would You Rather)
+-- ==========================================================
+
+INSERT INTO game_prompts (id, engine, category, prompt_text, options) VALUES
+  ('11111111-0001-4000-8000-000000000001', 'vote_reveal', 'general', 'Would you rather always be 10 minutes late or always be 20 minutes early?', '["Always 10 minutes late", "Always 20 minutes early"]'::jsonb),
+  ('11111111-0001-4000-8000-000000000002', 'vote_reveal', 'general', 'Would you rather be able to fly at 10 mph or teleport to a random location once a week?', '["Fly at 10 mph", "Teleport randomly once a week"]'::jsonb),
+  ('11111111-0001-4000-8000-000000000003', 'vote_reveal', 'general', 'Would you rather have unlimited free food anywhere or unlimited free first-class flights?', '["Unlimited free food", "Unlimited free first-class flights"]'::jsonb),
+  ('11111111-0001-4000-8000-000000000004', 'vote_reveal', 'general', 'Would you rather explore the deepest depths of the ocean or travel to outer space?', '["Explore deep ocean", "Travel to outer space"]'::jsonb),
+  ('11111111-0001-4000-8000-000000000005', 'vote_reveal', 'general', 'Would you rather have all your thoughts broadcast out loud or never speak again?', '["Thoughts broadcast out loud", "Never speak again"]'::jsonb),
+  ('11111111-0001-4000-8000-000000000006', 'vote_reveal', 'general', 'Would you rather live in a world without music or a world without movies and TV?', '["World without music", "World without movies/TV"]'::jsonb),
+  ('11111111-0001-4000-8000-000000000007', 'vote_reveal', 'general', 'Would you rather always have cold coffee or always have lukewarm soda?', '["Always cold coffee", "Always lukewarm soda"]'::jsonb),
+  ('11111111-0001-4000-8000-000000000008', 'vote_reveal', 'general', 'Would you rather possess superhuman strength or superhuman speed?', '["Super strength", "Super speed"]'::jsonb),
+  ('11111111-0001-4000-8000-000000000009', 'vote_reveal', 'general', 'Would you rather know the exact date of your death or the exact cause?', '["Exact date", "Exact cause"]'::jsonb),
+
+  ('11111111-0002-4000-8000-000000000001', 'vote_reveal', 'couples', 'Would you rather share all passwords and browser histories or never check each other''s phones?', '["Share all passwords", "Never check phones"]'::jsonb),
+  ('11111111-0002-4000-8000-000000000002', 'vote_reveal', 'couples', 'Would you rather go on an ultra-luxury resort vacation or an exciting adventure road trip?', '["Luxury resort vacation", "Adventure road trip"]'::jsonb),
+  ('11111111-0002-4000-8000-000000000003', 'vote_reveal', 'couples', 'Would you rather cook an elaborate dinner together every night or get free gourmet takeout every night?', '["Cook dinner together", "Free gourmet takeout"]'::jsonb),
+  ('11111111-0002-4000-8000-000000000004', 'vote_reveal', 'couples', 'Would you rather always share the exact same sleep schedule or always crave the exact same foods?', '["Same sleep schedule", "Same food cravings"]'::jsonb),
+  ('11111111-0002-4000-8000-000000000005', 'vote_reveal', 'couples', 'Would you rather move into a stylish penthouse in a bustling city or a peaceful countryside farmhouse?', '["Bustling city penthouse", "Countryside farmhouse"]'::jsonb),
+  ('11111111-0002-4000-8000-000000000006', 'vote_reveal', 'couples', 'Would you rather have your partner pick all your outfits for a month or pick all your meals for a month?', '["Partner picks outfits", "Partner picks meals"]'::jsonb),
+  ('11111111-0002-4000-8000-000000000007', 'vote_reveal', 'couples', 'Would you rather binge a 10-season TV show together in one weekend or watch a new movie every night for a month?', '["Binge 10-season show", "Movie every night"]'::jsonb)
+ON CONFLICT (id) DO NOTHING;
+
 
 -- ==========================================================
 -- POSTGRES RPC FUNCTIONS (Atomic Concurrency & Game Logic)
 -- ==========================================================
 
--- Function: Start Game
+-- Function: Start Game (Supports Word Chain & Vote Reveal)
 CREATE OR REPLACE FUNCTION start_game(
   p_session_id uuid
 )
@@ -71,6 +139,8 @@ DECLARE
   v_player_ids jsonb;
   v_player_count int;
   v_deadline timestamptz;
+  v_prompt game_prompts%ROWTYPE;
+  v_new_config jsonb;
 BEGIN
   -- Lock the session row for update
   SELECT * INTO v_session
@@ -92,34 +162,83 @@ BEGIN
     RAISE EXCEPTION 'Need at least 1 player to start';
   END IF;
 
-  v_deadline := now() + interval '15 seconds';
-
-  -- Update session to playing
-  UPDATE game_sessions
-  SET status = 'playing',
-      turn_order = v_player_ids,
-      current_turn_index = 0,
-      used_words = '[]'::jsonb,
-      last_letter = NULL,
-      turn_deadline = v_deadline
-  WHERE id = p_session_id;
-
   -- Ensure all players are marked not eliminated
   UPDATE game_players
   SET is_eliminated = false
   WHERE session_id = p_session_id;
 
-  RETURN jsonb_build_object(
-    'success', true,
-    'status', 'playing',
-    'turn_order', v_player_ids,
-    'turn_deadline', v_deadline
-  );
+  -- Handle game type specific start logic
+  IF v_session.game_type = 'vote_reveal' THEN
+    -- Pick a random prompt matching vote_reveal and category
+    SELECT * INTO v_prompt
+    FROM game_prompts
+    WHERE engine = 'vote_reveal' AND category = v_session.category
+    ORDER BY random()
+    LIMIT 1;
+
+    -- Fallback to any vote_reveal prompt if category is empty
+    IF v_prompt.id IS NULL THEN
+      SELECT * INTO v_prompt
+      FROM game_prompts
+      WHERE engine = 'vote_reveal'
+      ORDER BY random()
+      LIMIT 1;
+    END IF;
+
+    v_deadline := now() + interval '20 seconds';
+
+    v_new_config := jsonb_build_object(
+      'round_number', 1,
+      'voting_phase', 'voting',
+      'current_prompt', jsonb_build_object(
+        'id', v_prompt.id,
+        'prompt_text', v_prompt.prompt_text,
+        'options', v_prompt.options,
+        'category', v_prompt.category
+      ),
+      'used_prompt_ids', jsonb_build_array(v_prompt.id)
+    );
+
+    UPDATE game_sessions
+    SET status = 'playing',
+        turn_order = v_player_ids,
+        current_turn_index = 0,
+        turn_deadline = v_deadline,
+        game_config = v_new_config
+    WHERE id = p_session_id;
+
+    RETURN jsonb_build_object(
+      'success', true,
+      'status', 'playing',
+      'turn_deadline', v_deadline,
+      'game_config', v_new_config
+    );
+  ELSE
+    -- Word chain game logic (30 seconds turn timer)
+    v_deadline := now() + interval '30 seconds';
+
+    UPDATE game_sessions
+    SET status = 'playing',
+        turn_order = v_player_ids,
+        current_turn_index = 0,
+        used_words = '[]'::jsonb,
+        last_letter = NULL,
+        turn_deadline = v_deadline,
+        game_config = '{}'::jsonb
+    WHERE id = p_session_id;
+
+    RETURN jsonb_build_object(
+      'success', true,
+      'status', 'playing',
+      'turn_order', v_player_ids,
+      'turn_deadline', v_deadline
+    );
+  END IF;
 END;
 $$;
 
 
--- Function: Submit Word (Atomic validation, appending word, advancing turn)
+-- Function: Submit Word (Word Chain: Atomic validation, appending word, advancing turn)
 CREATE OR REPLACE FUNCTION submit_word(
   p_session_id uuid,
   p_player_id uuid,
@@ -205,7 +324,6 @@ BEGIN
   END IF;
 
   -- 6. Check if word has already been used
-  -- Check in used_words array (both string items and object items {word: '...'})
   IF EXISTS (
     SELECT 1 FROM jsonb_array_elements(v_session.used_words) elem
     WHERE lower(elem #>> '{}') = v_clean_word
@@ -260,12 +378,12 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- 9. Update game session with new word, new last_letter, next turn, new 15s deadline
+  -- 9. Update game session with new word, new last_letter, next turn, new 30s deadline
   UPDATE game_sessions
   SET used_words = v_new_used_words,
       last_letter = v_last_char,
       current_turn_index = v_next_index,
-      turn_deadline = now() + interval '15 seconds'
+      turn_deadline = now() + interval '30 seconds'
   WHERE id = p_session_id;
 
   RETURN jsonb_build_object(
@@ -273,16 +391,177 @@ BEGIN
     'word', v_clean_word,
     'last_letter', v_last_char,
     'current_turn_index', v_next_index,
-    'turn_deadline', now() + interval '15 seconds'
+    'turn_deadline', now() + interval '30 seconds'
   );
 END;
 $$;
 
 
--- Function: Handle Turn Timeout (Eliminate timed out player, pass turn)
+-- Function: Submit Vote (Vote & Reveal Engine)
+CREATE OR REPLACE FUNCTION submit_vote(
+  p_session_id uuid,
+  p_player_id uuid,
+  p_round_number int,
+  p_choice text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_session game_sessions%ROWTYPE;
+  v_total_active int;
+  v_total_votes int;
+  v_config jsonb;
+BEGIN
+  -- Lock session
+  SELECT * INTO v_session
+  FROM game_sessions
+  WHERE id = p_session_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Session not found';
+  END IF;
+
+  IF v_session.status <> 'playing' THEN
+    RAISE EXCEPTION 'Game is not currently active';
+  END IF;
+
+  -- Upsert vote
+  INSERT INTO game_votes (session_id, player_id, round_number, choice, created_at)
+  VALUES (p_session_id, p_player_id, p_round_number, p_choice, now())
+  ON CONFLICT (session_id, player_id, round_number)
+  DO UPDATE SET choice = EXCLUDED.choice, created_at = now();
+
+  -- Check if all active non-eliminated players have voted
+  SELECT count(*) INTO v_total_active
+  FROM game_players
+  WHERE session_id = p_session_id AND is_eliminated = false;
+
+  SELECT count(*) INTO v_total_votes
+  FROM game_votes
+  WHERE session_id = p_session_id AND round_number = p_round_number;
+
+  v_config := v_session.game_config;
+
+  -- If all players have voted, trigger reveal
+  IF v_total_votes >= v_total_active AND v_total_active > 0 THEN
+    v_config := jsonb_set(v_config, '{voting_phase}', '"revealed"'::jsonb);
+    
+    UPDATE game_sessions
+    SET game_config = v_config
+    WHERE id = p_session_id;
+
+    RETURN jsonb_build_object(
+      'success', true,
+      'revealed', true,
+      'total_votes', v_total_votes,
+      'total_players', v_total_active
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'revealed', false,
+    'total_votes', v_total_votes,
+    'total_players', v_total_active
+  );
+END;
+$$;
+
+
+-- Function: Next Vote Round (Vote & Reveal: Fetch next unused prompt and reset timer)
+CREATE OR REPLACE FUNCTION next_vote_round(
+  p_session_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_session game_sessions%ROWTYPE;
+  v_prompt game_prompts%ROWTYPE;
+  v_used_ids jsonb;
+  v_round int;
+  v_new_config jsonb;
+  v_deadline timestamptz;
+BEGIN
+  -- Lock session
+  SELECT * INTO v_session
+  FROM game_sessions
+  WHERE id = p_session_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Session not found';
+  END IF;
+
+  v_round := COALESCE((v_session.game_config ->> 'round_number')::int, 1) + 1;
+  v_used_ids := COALESCE(v_session.game_config -> 'used_prompt_ids', '[]'::jsonb);
+
+  -- Pick unused prompt from category
+  SELECT * INTO v_prompt
+  FROM game_prompts
+  WHERE engine = 'vote_reveal'
+    AND category = v_session.category
+    AND NOT (v_used_ids @> to_jsonb(id::text))
+  ORDER BY random()
+  LIMIT 1;
+
+  -- If all prompts in category were used, cycle and allow any from category
+  IF v_prompt.id IS NULL THEN
+    SELECT * INTO v_prompt
+    FROM game_prompts
+    WHERE engine = 'vote_reveal' AND category = v_session.category
+    ORDER BY random()
+    LIMIT 1;
+  END IF;
+
+  -- Fallback to any vote_reveal prompt
+  IF v_prompt.id IS NULL THEN
+    SELECT * INTO v_prompt
+    FROM game_prompts
+    WHERE engine = 'vote_reveal'
+    ORDER BY random()
+    LIMIT 1;
+  END IF;
+
+  v_deadline := now() + interval '20 seconds';
+  v_used_ids := v_used_ids || to_jsonb(v_prompt.id::text);
+
+  v_new_config := jsonb_build_object(
+    'round_number', v_round,
+    'voting_phase', 'voting',
+    'current_prompt', jsonb_build_object(
+      'id', v_prompt.id,
+      'prompt_text', v_prompt.prompt_text,
+      'options', v_prompt.options,
+      'category', v_prompt.category
+    ),
+    'used_prompt_ids', v_used_ids
+  );
+
+  UPDATE game_sessions
+  SET status = 'playing',
+      turn_deadline = v_deadline,
+      game_config = v_new_config
+  WHERE id = p_session_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'round_number', v_round,
+    'turn_deadline', v_deadline,
+    'game_config', v_new_config
+  );
+END;
+$$;
+
+
+-- Function: Handle Turn Timeout
 CREATE OR REPLACE FUNCTION handle_timeout(
   p_session_id uuid,
-  p_timed_out_player_id uuid
+  p_timed_out_player_id uuid DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -297,6 +576,7 @@ DECLARE
   v_candidate_id uuid;
   v_is_elim boolean;
   v_i int;
+  v_config jsonb;
 BEGIN
   -- Lock session
   SELECT * INTO v_session
@@ -312,6 +592,17 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'message', 'Game not playing');
   END IF;
 
+  -- For vote_reveal, timeout marks voting_phase as 'revealed'
+  IF v_session.game_type = 'vote_reveal' THEN
+    v_config := jsonb_set(v_session.game_config, '{voting_phase}', '"revealed"'::jsonb);
+    UPDATE game_sessions
+    SET game_config = v_config
+    WHERE id = p_session_id;
+
+    RETURN jsonb_build_object('success', true, 'voting_phase', 'revealed');
+  END IF;
+
+  -- Word chain timeout handling (30s)
   v_turn_order_len := jsonb_array_length(v_session.turn_order);
   IF v_turn_order_len = 0 THEN
     RETURN jsonb_build_object('success', false, 'message', 'No players in turn order');
@@ -320,11 +611,11 @@ BEGIN
   v_expected_player_id := (v_session.turn_order ->> v_session.current_turn_index)::uuid;
   
   -- If expected player matches timed out player
-  IF v_expected_player_id = p_timed_out_player_id THEN
+  IF p_timed_out_player_id IS NULL OR v_expected_player_id = p_timed_out_player_id THEN
     -- Mark player eliminated
     UPDATE game_players
     SET is_eliminated = true
-    WHERE id = p_timed_out_player_id AND session_id = p_session_id;
+    WHERE id = v_expected_player_id AND session_id = p_session_id;
 
     -- Check how many active players remain
     SELECT count(*) INTO v_active_count
@@ -360,17 +651,17 @@ BEGIN
       END IF;
     END LOOP;
 
-    -- Advance turn and reset 15-second deadline
+    -- Advance turn and reset 30-second deadline
     UPDATE game_sessions
     SET current_turn_index = v_next_index,
-        turn_deadline = now() + interval '15 seconds'
+        turn_deadline = now() + interval '30 seconds'
     WHERE id = p_session_id;
 
     RETURN jsonb_build_object(
       'success', true,
-      'eliminated_player_id', p_timed_out_player_id,
+      'eliminated_player_id', v_expected_player_id,
       'current_turn_index', v_next_index,
-      'turn_deadline', now() + interval '15 seconds'
+      'turn_deadline', now() + interval '30 seconds'
     );
   END IF;
 
@@ -379,7 +670,7 @@ END;
 $$;
 
 
--- Function: Reset Game Session (For "Play Again")
+-- Function: Reset Game Session (For "Play Again" / "End Game" return to lobby)
 CREATE OR REPLACE FUNCTION reset_game(
   p_session_id uuid
 )
@@ -395,7 +686,8 @@ BEGIN
       current_turn_index = 0,
       used_words = '[]'::jsonb,
       last_letter = NULL,
-      turn_deadline = NULL
+      turn_deadline = NULL,
+      game_config = '{}'::jsonb
   WHERE id = p_session_id;
 
   -- Reset players

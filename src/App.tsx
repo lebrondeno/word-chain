@@ -10,25 +10,39 @@ import { sanitizeRoomCode } from './lib/roomCode';
 
 function MainContent() {
   const { session, loading } = useGame();
-  const [initialRoomCode, setInitialRoomCode] = useState<string>('');
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
-
-  // Parse path-based or query-based join links e.g. /join/ABCD or ?join=ABCD
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
+  const [initialRoomCode, setInitialRoomCode] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
     const path = window.location.pathname;
     const match = path.match(/^\/join\/([a-zA-Z0-9]{3,6})/i);
     if (match && match[1]) {
-      setInitialRoomCode(sanitizeRoomCode(match[1]));
-      return;
+      return sanitizeRoomCode(match[1]);
     }
-
     const params = new URLSearchParams(window.location.search);
     const codeParam = params.get('join') || params.get('room') || params.get('code');
-    if (codeParam) {
-      setInitialRoomCode(sanitizeRoomCode(codeParam));
-    }
+    return codeParam ? sanitizeRoomCode(codeParam) : '';
+  });
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
+
+  // Listen for history back/forward navigation
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      const match = path.match(/^\/join\/([a-zA-Z0-9]{3,6})/i);
+      if (match && match[1]) {
+        setInitialRoomCode(sanitizeRoomCode(match[1]));
+        return;
+      }
+      const params = new URLSearchParams(window.location.search);
+      const codeParam = params.get('join') || params.get('room') || params.get('code');
+      if (codeParam) {
+        setInitialRoomCode(sanitizeRoomCode(codeParam));
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   if (loading) {

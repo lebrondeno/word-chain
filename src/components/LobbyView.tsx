@@ -1,20 +1,28 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { CATEGORIES } from '../data';
-import { Play, Copy, Check, Share2, Crown, Users, AlertCircle } from 'lucide-react';
+import { VOTE_REVEAL_CATEGORIES, GAME_TYPES } from '../data/prompts';
+import { Play, Copy, Check, Share2, Crown, Users, AlertCircle, Settings2 } from 'lucide-react';
 import { ShareModal } from './ShareModal';
 
 export const LobbyView: React.FC = () => {
-  const { session, players, localPlayer, startGame, loading, error } = useGame();
+  const { session, players, localPlayer, startGame, setGameSettings, loading, error } = useGame();
   const [copied, setCopied] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [updatingSettings, setUpdatingSettings] = useState(false);
 
   if (!session) return null;
 
   const isHost = Boolean(localPlayer?.isHost);
-  const categoryInfo = CATEGORIES[session.category] || CATEGORIES['cities'];
+  const gameType = session.game_type || 'word_chain';
   const joinUrl = typeof window !== 'undefined' ? `${window.location.origin}/join/${session.room_code}` : '';
+
+  // Get active category information based on game type
+  const isVoteReveal = gameType === 'vote_reveal';
+  const categoryInfo = isVoteReveal
+    ? VOTE_REVEAL_CATEGORIES[session.category] || VOTE_REVEAL_CATEGORIES['general']
+    : CATEGORIES[session.category] || CATEGORIES['cities'];
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(joinUrl);
@@ -26,6 +34,21 @@ export const LobbyView: React.FC = () => {
     setStarting(true);
     await startGame();
     setStarting(false);
+  };
+
+  const handleGameTypeChange = async (newType: string) => {
+    if (!isHost || updatingSettings || newType === gameType) return;
+    setUpdatingSettings(true);
+    const defaultCat = newType === 'vote_reveal' ? 'general' : 'cities';
+    await setGameSettings(newType, defaultCat);
+    setUpdatingSettings(false);
+  };
+
+  const handleCategoryChange = async (newCategory: string) => {
+    if (!isHost || updatingSettings || newCategory === session.category) return;
+    setUpdatingSettings(true);
+    await setGameSettings(gameType, newCategory);
+    setUpdatingSettings(false);
   };
 
   // Avatar color generator based on player name
@@ -47,14 +70,14 @@ export const LobbyView: React.FC = () => {
 
   return (
     <div className="w-full max-w-md mx-auto px-4 py-6 animate-fade-in space-y-5">
-      {/* Room Code Card */}
+      {/* 1. Room Code Card */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 text-center shadow-xl backdrop-blur-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
 
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full text-xs font-semibold">
-            <span>{categoryInfo.icon}</span>
-            <span>{categoryInfo.name}</span>
+            <span>{isVoteReveal ? '🗳️' : '⛓️'}</span>
+            <span>{isVoteReveal ? 'Would You Rather' : 'Word Chain'}</span>
           </div>
           <button
             onClick={() => setIsShareOpen(true)}
@@ -81,7 +104,145 @@ export const LobbyView: React.FC = () => {
         </button>
       </div>
 
-      {/* Players List Card */}
+      {/* 2. Game Type & Category Selection Card */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl backdrop-blur-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Settings2 className="w-4 h-4 text-indigo-400" />
+            <h3 className="font-bold text-sm text-white">Game Settings</h3>
+          </div>
+          {isHost ? (
+            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
+              Host Controls
+            </span>
+          ) : (
+            <span className="text-[10px] text-slate-400">Chosen by host</span>
+          )}
+        </div>
+
+        {/* Game Engine Mode Selector */}
+        {isHost ? (
+          <div className="space-y-3">
+            <label className="block text-xs font-semibold text-slate-300">
+              Select Game Mode
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.values(GAME_TYPES).map((type) => {
+                const isSelected = gameType === type.id;
+                return (
+                  <button
+                    key={type.id}
+                    type="button"
+                    onClick={() => handleGameTypeChange(type.id)}
+                    disabled={updatingSettings}
+                    className={`p-3 rounded-2xl border text-left transition flex flex-col justify-between gap-1.5 ${
+                      isSelected
+                        ? 'bg-gradient-to-br from-indigo-600/30 to-purple-600/20 border-indigo-500 text-white shadow-inner ring-1 ring-indigo-500/40'
+                        : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{type.icon}</span>
+                      <span className="font-bold text-xs text-white">{type.name}</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 line-clamp-2 leading-tight">
+                      {type.id === 'word_chain' ? 'Letter-linking elimination' : 'Group vote & reveal'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Category Selector */}
+            <div className="pt-2">
+              <label className="block text-xs font-semibold text-slate-300 mb-2">
+                {isVoteReveal ? 'Prompt Theme' : 'Word Category'}
+              </label>
+
+              {isVoteReveal ? (
+                /* Vote & Reveal categories */
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.values(VOTE_REVEAL_CATEGORIES).map((cat) => {
+                    const isSelected = session.category === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => handleCategoryChange(cat.id)}
+                        disabled={updatingSettings}
+                        className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                          isSelected
+                            ? 'bg-purple-600/20 border-purple-500 text-white shadow-inner'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                        }`}
+                      >
+                        <span className="text-xl">{cat.icon}</span>
+                        <div className="overflow-hidden">
+                          <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                          <div className="text-[10px] text-slate-400 truncate">{cat.description}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Word Chain categories */
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {Object.values(CATEGORIES).map((cat) => {
+                    const isSelected = session.category === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => handleCategoryChange(cat.id)}
+                        disabled={updatingSettings}
+                        className={`p-2.5 rounded-xl border text-left transition flex items-center gap-2 ${
+                          isSelected
+                            ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-inner'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                        }`}
+                      >
+                        <span className="text-lg">{cat.icon}</span>
+                        <div className="overflow-hidden">
+                          <div className="font-semibold text-xs text-white truncate">{cat.name}</div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {cat.words.length}+ words
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Non-host overview card */
+          <div className="p-3.5 bg-slate-950/70 border border-slate-800/80 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">{categoryInfo.icon}</span>
+                <div>
+                  <div className="font-bold text-sm text-white">
+                    {isVoteReveal ? 'Would You Rather' : 'Word Chain'}
+                  </div>
+                  <div className="text-xs text-indigo-400 font-medium">{categoryInfo.name}</div>
+                </div>
+              </div>
+              <span className="px-2.5 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full text-[11px] font-semibold">
+                Ready
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {isVoteReveal
+                ? 'Vote on tough choices within 20s and see how your group answered.'
+                : 'Take turns linking words by last letter before the 30s timer runs out.'}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Players List Card */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-xl backdrop-blur-sm">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -94,7 +255,7 @@ export const LobbyView: React.FC = () => {
         </div>
 
         {/* Player Roster */}
-        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+        <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
           {players.map((p, idx) => {
             const isThisHost = idx === 0;
             const isMe = p.id === localPlayer?.playerId;
@@ -161,26 +322,29 @@ export const LobbyView: React.FC = () => {
                 {starting ? (
                   <span className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Starting Game...
+                    Starting {isVoteReveal ? 'Would You Rather' : 'Word Chain'}...
                   </span>
                 ) : (
                   <>
                     <Play className="w-5 h-5 fill-current" />
-                    <span>Start Game ({players.length} {players.length === 1 ? 'Player' : 'Players'})</span>
+                    <span>
+                      Start {isVoteReveal ? 'Would You Rather' : 'Word Chain'} ({players.length}{' '}
+                      {players.length === 1 ? 'Player' : 'Players'})
+                    </span>
                   </>
                 )}
               </button>
 
               {players.length === 1 && (
                 <p className="text-center text-[11px] text-slate-400">
-                  Tip: Share the link to play with friends, or start now for solo practice!
+                  Tip: Share the room code to play with friends!
                 </p>
               )}
             </div>
           ) : (
             <div className="p-3.5 bg-slate-950/70 border border-slate-800/80 rounded-2xl flex items-center justify-center gap-2.5 text-slate-300 text-xs">
               <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-ping" />
-              <span>Waiting for the host to start the game...</span>
+              <span>Waiting for host to start {isVoteReveal ? 'Would You Rather' : 'Word Chain'}...</span>
             </div>
           )}
         </div>

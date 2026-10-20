@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../context/GameContext';
 import { CATEGORIES, validateWordSubmission } from '../data';
 import { WordHistoryDrawer } from './WordHistoryDrawer';
+import { VoteRevealGameView } from './VoteRevealGameView';
+import type { GameSession } from '../types/game';
 import {
   Clock,
   Send,
@@ -10,9 +12,12 @@ import {
   Flame,
 } from 'lucide-react';
 
-export const GameView: React.FC = () => {
+interface WordChainGameViewProps {
+  session: GameSession;
+}
+
+const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
   const {
-    session,
     players,
     localPlayer,
     isMyTurn,
@@ -28,20 +33,19 @@ export const GameView: React.FC = () => {
   const [localFeedback, setLocalFeedback] = useState<{ valid: boolean; message: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  if (!session) return null;
-
   const categoryInfo = CATEGORIES[session.category] || CATEGORIES['cities'];
   const requiredLetter = session.last_letter ? session.last_letter.toUpperCase() : null;
 
   // Auto-focus input when it becomes user's turn
   useEffect(() => {
     if (isMyTurn) {
-      setInputWord('');
-      setLocalFeedback(null);
-      setError(null);
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        setInputWord('');
+        setLocalFeedback(null);
+        setError(null);
         inputRef.current?.focus();
-      }, 100);
+      }, 50);
+      return () => clearTimeout(timer);
     }
   }, [isMyTurn, session.current_turn_index, setError]);
 
@@ -104,10 +108,11 @@ export const GameView: React.FC = () => {
       : lastSubmittedItem.display_word || lastSubmittedItem.word
     : null;
 
-  // Timer percentage (15s max)
-  const timerPercent = Math.min(100, Math.max(0, (timeRemaining / 15) * 100));
-  const isUrgent = timeRemaining <= 5;
-  const isCritical = timeRemaining <= 3;
+  // Timer percentage (30s max duration)
+  const timerPercent = Math.min(100, Math.max(0, (timeRemaining / 30) * 100));
+  // Color-shift thresholds: green 30s→15s, amber 15s→7s, red under 7s (pulsing)
+  const isRed = timeRemaining < 7;
+  const isAmber = timeRemaining >= 7 && timeRemaining <= 15;
 
   return (
     <div className="w-full max-w-lg mx-auto px-4 py-4 space-y-4 animate-fade-in">
@@ -126,17 +131,17 @@ export const GameView: React.FC = () => {
             </div>
           </div>
 
-          {/* Numerical Timer Badge */}
+          {/* Numerical Timer Badge: Green 30s-15s, Amber 15s-7s, Red <7s (pulsing) */}
           <div
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold transition-all ${
-              isCritical
+              isRed
                 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse scale-105'
-                : isUrgent
+                : isAmber
                 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
             }`}
           >
-            <Clock className={`w-3.5 h-3.5 ${isCritical ? 'animate-spin' : ''}`} />
+            <Clock className={`w-3.5 h-3.5 ${isRed ? 'animate-spin' : ''}`} />
             <span>{timeRemaining}s</span>
           </div>
         </div>
@@ -145,11 +150,11 @@ export const GameView: React.FC = () => {
         <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
           <div
             className={`h-full transition-all duration-500 rounded-full ${
-              isCritical
+              isRed
                 ? 'bg-gradient-to-r from-rose-600 to-red-500'
-                : isUrgent
+                : isAmber
                 ? 'bg-gradient-to-r from-amber-500 to-orange-500'
-                : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400'
+                : 'bg-gradient-to-r from-emerald-500 via-teal-500 to-green-400'
             }`}
             style={{ width: `${timerPercent}%` }}
           />
@@ -349,4 +354,16 @@ export const GameView: React.FC = () => {
       <WordHistoryDrawer usedWords={usedWordsList} category={session.category} />
     </div>
   );
+};
+
+export const GameView: React.FC = () => {
+  const { session } = useGame();
+
+  if (!session) return null;
+
+  if (session.game_type === 'vote_reveal') {
+    return <VoteRevealGameView />;
+  }
+
+  return <WordChainGameView session={session} />;
 };
