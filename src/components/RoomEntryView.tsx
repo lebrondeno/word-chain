@@ -1,25 +1,26 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
-import { isSupabaseConfigured } from '../lib/supabase';
 import { CATEGORIES } from '../data';
 import { VOTE_REVEAL_CATEGORIES } from '../data/prompts';
 import { sanitizeRoomCode } from '../lib/roomCode';
+import { getMySavedQuizzes, type UserSavedQuiz } from '../lib/savedQuizzes';
 import {
   Play,
   Sparkles,
-  AlertCircle,
   ArrowRight,
+  AlertCircle,
+  Trophy,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 interface RoomEntryViewProps {
   initialRoomCode?: string;
-  onOpenSupabaseModal?: () => void;
-  onOpenFriendshipQuiz?: (code?: string) => void;
+  onOpenFriendshipQuiz?: (code?: string, view?: 'results' | 'play') => void;
 }
 
 export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
   initialRoomCode,
-  onOpenSupabaseModal,
   onOpenFriendshipQuiz,
 }) => {
   const { createGame, joinGame, loading, error, setError } = useGame();
@@ -31,6 +32,16 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
     return typeof window !== 'undefined' ? localStorage.getItem('word_chain_saved_name') || '' : '';
   });
   const [inputCode, setInputCode] = useState(() => (initialRoomCode ? sanitizeRoomCode(initialRoomCode) : ''));
+  const [savedQuizzes] = useState<UserSavedQuiz[]>(() => getMySavedQuizzes());
+  const [copiedQuizCode, setCopiedQuizCode] = useState<string | null>(null);
+
+  const handleCopyQuizLink = (code: string) => {
+    if (typeof window === 'undefined') return;
+    const url = `${window.location.origin}/?quiz=${code}`;
+    navigator.clipboard.writeText(url);
+    setCopiedQuizCode(code);
+    setTimeout(() => setCopiedQuizCode(null), 2000);
+  };
 
   const saveName = (name: string) => {
     setDisplayName(name);
@@ -82,8 +93,6 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
     await joinGame(clean, displayName.trim());
   };
 
-  const configured = isSupabaseConfigured();
-
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-6 sm:py-10 space-y-8 animate-fade-in text-slate-800">
       {/* 1. Header Hero Banner */}
@@ -104,24 +113,6 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
           No sign-ups or app downloads needed. Pick a game, share the invite on WhatsApp, and start playing in seconds!
         </p>
       </div>
-
-      {/* Supabase Notice if not configured */}
-      {!configured && onOpenSupabaseModal && (
-        <div className="bg-white rounded-2xl p-4 border border-amber-200 shadow-sm flex items-start gap-3 text-xs text-amber-900">
-          <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <span className="font-bold text-amber-950 block mb-0.5">Database Setup Recommended</span>
-            Connect your Supabase credentials to enable cross-device live multiplayer rooms and real-time syncing.
-          </div>
-          <button
-            type="button"
-            onClick={onOpenSupabaseModal}
-            className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-bold border border-amber-300 transition shrink-0"
-          >
-            Configure
-          </button>
-        </div>
-      )}
 
       {/* 2. Universal "Join Room or Quiz Code" Bar with thumbnail icon */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-200 max-w-2xl mx-auto">
@@ -355,6 +346,79 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
               </div>
             </div>
           </div>
+
+          {/* 4. My Quizzes & Live Results Card (Persistent access after closing app) */}
+          {savedQuizzes.length > 0 && (
+            <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-amber-50 text-amber-600 rounded-xl border border-amber-200">
+                    <Trophy className="w-5 h-5 text-amber-500" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base text-[#0b2545]">My Quizzes &amp; Live Results</h3>
+                    <p className="text-xs text-slate-500">View live scoreboards and friend responses anytime</p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                  {savedQuizzes.length} saved
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {savedQuizzes.slice(0, 4).map((q) => (
+                  <div
+                    key={q.code}
+                    className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col justify-between gap-3 hover:border-[#3b4cca]/40 hover:shadow-xs transition"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="px-2 py-0.5 rounded-full bg-[#0b2545] text-white font-mono font-bold text-xs tracking-wider">
+                            {q.code}
+                          </span>
+                          {q.isCreator ? (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Creator
+                            </span>
+                          ) : q.myScore !== undefined ? (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                              Score: {q.myScore}/{q.totalQuestions}
+                            </span>
+                          ) : null}
+                        </div>
+                        <h4 className="font-bold text-slate-900 text-xs mt-1.5">
+                          {q.isCreator ? 'Your Friendship Quiz' : `${q.creatorName}'s Friendship Quiz`}
+                        </h4>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCopyQuizLink(q.code)}
+                        title="Copy Share Link"
+                        className="p-1.5 text-slate-500 hover:text-[#3b4cca] rounded-lg transition"
+                      >
+                        {copiedQuizCode === q.code ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => onOpenFriendshipQuiz && onOpenFriendshipQuiz(q.code, 'results')}
+                      className="w-full py-2 px-3 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
+                    >
+                      <Trophy className="w-3.5 h-3.5 text-amber-300" />
+                      <span>View Results &amp; Leaderboard</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : activeTab === 'create_room' ? (
         /* CREATE ROOM FORM */

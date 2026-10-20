@@ -1,29 +1,34 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
-import { isSupabaseConfigured } from '../lib/supabase';
 import { soundManager } from '../lib/audio';
 import {
   Volume2,
   VolumeX,
   HelpCircle,
-  Database,
+  Trophy,
   LogOut,
   Share2,
   Home,
 } from 'lucide-react';
 import { RulesModal } from './RulesModal';
-import { SupabaseModal } from './SupabaseModal';
 import { ShareModal } from './ShareModal';
+import { MyResultsModal } from './MyResultsModal';
 
 interface NavbarProps {
   onGoHome?: () => void;
+  onOpenQuiz?: (code: string, view?: 'results' | 'play') => void;
+  onCreateQuiz?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onGoHome }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  onGoHome,
+  onOpenQuiz,
+  onCreateQuiz,
+}) => {
   const { session, leaveGame } = useGame();
   const [isMuted, setIsMuted] = useState(() => soundManager.getMuted());
   const [isRulesOpen, setIsRulesOpen] = useState(false);
-  const [isSupabaseOpen, setIsSupabaseOpen] = useState(false);
+  const [isMyResultsOpen, setIsMyResultsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
 
   const handleToggleSound = () => {
@@ -41,8 +46,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onGoHome }) => {
       onGoHome();
     }
   };
-
-  const configured = isSupabaseConfigured();
 
   return (
     <>
@@ -99,6 +102,17 @@ export const Navbar: React.FC<NavbarProps> = ({ onGoHome }) => {
               <Home className="w-5 h-5" />
             </button>
 
+            {/* My Results Button (Replaces DB setup button) */}
+            <button
+              type="button"
+              onClick={() => setIsMyResultsOpen(true)}
+              title="My Quizzes & Live Results"
+              className="px-2.5 py-1.5 rounded-xl border border-amber-400/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition flex items-center gap-1.5 text-xs font-bold"
+            >
+              <Trophy className="w-4 h-4 text-amber-400" />
+              <span className="hidden sm:inline">My Results</span>
+            </button>
+
             {/* Rules Button */}
             <button
               type="button"
@@ -123,23 +137,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onGoHome }) => {
               )}
             </button>
 
-            {/* Supabase connection modal */}
-            <button
-              type="button"
-              onClick={() => setIsSupabaseOpen(true)}
-              title={configured ? 'Supabase Connected' : 'Supabase Not Configured'}
-              className={`p-2 rounded-xl border transition flex items-center gap-1.5 text-xs ${
-                configured
-                  ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30'
-                  : 'bg-amber-500/20 border-amber-400/40 text-amber-300 hover:bg-amber-500/30 animate-pulse'
-              }`}
-            >
-              <Database className="w-4 h-4" />
-              <span className="hidden md:inline font-bold">
-                {configured ? 'Database' : 'Setup DB'}
-              </span>
-            </button>
-
             {session && (
               <button
                 type="button"
@@ -155,7 +152,19 @@ export const Navbar: React.FC<NavbarProps> = ({ onGoHome }) => {
       </header>
 
       <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} />
-      <SupabaseModal isOpen={isSupabaseOpen} onClose={() => setIsSupabaseOpen(false)} />
+      
+      <MyResultsModal
+        isOpen={isMyResultsOpen}
+        onClose={() => setIsMyResultsOpen(false)}
+        onOpenQuiz={(code, view) => {
+          setIsMyResultsOpen(false);
+          if (onOpenQuiz) {
+            onOpenQuiz(code, view);
+          }
+        }}
+        onCreateNew={onCreateQuiz}
+      />
+
       {session && (
         <ShareModal
           isOpen={isShareOpen}

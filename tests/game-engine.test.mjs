@@ -30,6 +30,8 @@ const {
   DEFAULT_QUIZ_LENGTH,
   MAX_CUSTOM_QUESTIONS,
   FRIENDSHIP_QUESTION_BANK,
+  getOptionText,
+  getOptionImage,
 } = await jiti.import('../src/data/friendshipPrompts.ts');
 
 const {
@@ -41,6 +43,16 @@ const {
   sortAndRankSubmissions,
   deduplicateSubmissions,
 } = await jiti.import('../src/lib/friendshipService.ts');
+
+const {
+  getMySavedQuizzes,
+  saveCreatedQuizToHistory,
+  savePlayedQuizToHistory,
+  removeQuizFromHistory,
+  getQuizDraft,
+  saveQuizDraft,
+  clearQuizDraft,
+} = await jiti.import('../src/lib/savedQuizzes.ts');
 
 test('Word Normalization and Letter Extraction', () => {
   assert.equal(normalizeWord('  Tokyo  '), 'tokyo');
@@ -161,8 +173,17 @@ test('Friendship Test - Question Bank & Quiz Configuration', () => {
     seenIds.add(q.id);
     assert.ok(q.prompt && q.prompt.length > 5, 'Prompt too short');
     assert.equal(q.options.length, 4, 'Each question must have 4 options');
-    const uniqueOptions = new Set(q.options.map((o) => o.trim().toLowerCase()));
+    const uniqueOptions = new Set(q.options.map((o) => getOptionText(o).trim().toLowerCase()));
     assert.equal(uniqueOptions.size, 4, `Question ${q.id} has duplicate options`);
+
+    // Verify visual illustration metadata for every option
+    for (let optIdx = 0; optIdx < q.options.length; optIdx++) {
+      const opt = q.options[optIdx];
+      assert.ok(opt.image, `Question ${q.id} option ${optIdx} missing image metadata`);
+      assert.match(opt.image, /^data:image\/svg\+xml/, `Option image must be a valid SVG data URI`);
+      assert.ok(getOptionText(opt).length > 0);
+      assert.ok(getOptionImage(opt, optIdx).length > 20);
+    }
     assert.ok(
       ['habits', 'food', 'travel', 'reactions', 'preferences', 'personality'].includes(q.category),
       `Invalid category ${q.category}`
@@ -371,4 +392,104 @@ test('Friendship Test - Quiz Code Generation and Sanitization', () => {
   assert.equal(sanitizeQuizCode('abcde'), 'ABCDE');
   assert.equal(sanitizeQuizCode('  xy-z99!  '), 'XYZ99');
   assert.equal(normalizePlayerName('  Alex Mercer  '), 'alex mercer');
+});
+
+test('Friendship Test - Option Illustration and Custom Fallback Helpers', () => {
+  // Test structured option with SVG image
+  const optObj = {
+    text: 'Up at sunrise',
+    image: 'data:image/svg+xml;utf8,%3Csvg%3E%3C%2Fsvg%3E',
+  };
+  assert.equal(getOptionText(optObj), 'Up at sunrise');
+  assert.equal(getOptionImage(optObj, 0), optObj.image);
+
+  // Test plain string custom option fallback
+  const optStr = 'My custom choice';
+  assert.equal(getOptionText(optStr), 'My custom choice');
+  const fallbackSvg = getOptionImage(optStr, 2);
+  assert.ok(fallbackSvg.startsWith('data:image/svg+xml;utf8,'));
+  assert.match(decodeURIComponent(fallbackSvg), /<svg/);
+});
+
+test('Friendship Test - Saved Quiz History Persistence (partyhub_my_quizzes)', () => {
+  // 1. Initially empty or clean
+  removeQuizFromHistory('TEST1');
+  removeQuizFromHistory('TEST2');
+
+  // 2. Save created quiz
+  saveCreatedQuizToHistory({
+    code: 'TEST1',
+    creatorName: 'Jordan',
+    totalQuestions: 10,
+    createdAt: '2026-10-21T00:00:00.000Z',
+  });
+
+  let list = getMySavedQuizzes();
+  const foundCreated = list.find((q) => q.code === 'TEST1');
+  assert.ok(foundCreated);
+  assert.equal(foundCreated.creatorName, 'Jordan');
+  assert.equal(foundCreated.isCreator, true);
+  assert.equal(foundCreated.totalQuestions, 10);
+
+  // 3. Save played quiz
+  savePlayedQuizToHistory({
+    code: 'TEST2',
+    creatorName: 'Taylor',
+    totalQuestions: 15,
+    score: 12,
+  });
+
+  list = getMySavedQuizzes();
+  const foundPlayed = list.find((q) => q.code === 'TEST2');
+  assert.ok(foundPlayed);
+  assert.equal(foundPlayed.creatorName, 'Taylor');
+  assert.equal(foundPlayed.isCreator, false);
+  assert.equal(foundPlayed.myScore, 12);
+
+  // 4. Update played quiz with a higher score (best score preserved)
+  savePlayedQuizToHistory({
+    code: 'TEST2',
+    creatorName: 'Taylor',
+    totalQuestions: 15,
+    score: 14,
+  });
+
+  list = getMySavedQuizzes();
+  const updatedPlayed = list.find((q) => q.code === 'TEST2');
+  assert.equal(updatedPlayed.myScore, 14);
+
+  // 5. Remove quiz from history
+  removeQuizFromHistory('TEST1');
+  list = getMySavedQuizzes();
+  assert.equal(list.some((q) => q.code === 'TEST1'), false);
+  removeQuizFromHistory('TEST2');
+});
+
+test('Friendship Test - In-Progress Quiz Draft Persistence (Survive Page Refresh)', () => {
+  clearQuizDraft();
+  assert.equal(getQuizDraft(), null);
+
+  const draftPayload = {
+    creatorName: 'Taylor',
+    quizLength: 10,
+    builderQuestions: [
+      { id: 'q1', prompt: 'Prompt 1', options: ['A', 'B'], correctIndex: 1 },
+      { id: 'q2', prompt: 'Prompt 2', options: ['C', 'D'], correctIndex: 0 },
+    ],
+    currentBuilderIndex: 1,
+    usedTemplateIds: ['q1', 'q2'],
+  };
+
+  saveQuizDraft(draftPayload);
+
+  const restored = getQuizDraft();
+  assert.ok(restored);
+  assert.equal(restored.creatorName, 'Taylor');
+  assert.equal(restored.currentBuilderIndex, 1);
+  assert.equal(restored.builderQuestions.length, 2);
+  assert.equal(restored.builderQuestions[0].correctIndex, 1);
+  assert.deepEqual(restored.usedTemplateIds, ['q1', 'q2']);
+
+  clearQuizDraft();
+  assert.equal(getQuizDraft(), null);
 });

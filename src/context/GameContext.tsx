@@ -130,6 +130,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const exists = await fetchSessionState(localPlayer.sessionId);
       if (!exists && isMounted) {
         updateLocalPlayer(null);
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          if (params.has('room')) {
+            params.delete('room');
+            const qs = params.toString();
+            window.history.replaceState({}, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+          }
+        }
+      } else if (exists && isMounted && localPlayer.roomCode) {
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('room') !== localPlayer.roomCode) {
+            params.set('room', localPlayer.roomCode);
+            params.delete('quiz');
+            params.delete('view');
+            window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+          }
+        }
       }
       if (isMounted) setLoading(false);
     }
@@ -137,7 +155,21 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       isMounted = false;
     };
-  }, [fetchSessionState, localPlayer?.sessionId, updateLocalPlayer]);
+  }, [fetchSessionState, localPlayer?.sessionId, localPlayer?.roomCode, updateLocalPlayer]);
+
+  // Sync room code to URL whenever active session changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (session?.room_code) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('room') !== session.room_code) {
+        params.set('room', session.room_code);
+        params.delete('quiz');
+        params.delete('view');
+        window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+      }
+    }
+  }, [session?.room_code]);
 
   // Realtime subscription setup
   useEffect(() => {
@@ -1002,6 +1034,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setPlayers([]);
     setVotes([]);
     setError(null);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('room')) {
+        params.delete('room');
+        const qs = params.toString();
+        const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
   };
 
   const refreshState = async () => {

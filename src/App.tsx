@@ -6,7 +6,6 @@ import { LobbyView } from './components/LobbyView';
 import { GameView } from './components/GameView';
 import { FinishedView } from './components/FinishedView';
 import { FriendshipQuizView } from './components/FriendshipQuizView';
-import { SupabaseModal } from './components/SupabaseModal';
 import { sanitizeRoomCode } from './lib/roomCode';
 
 function MainContent() {
@@ -31,13 +30,19 @@ function MainContent() {
     return quizParam ? quizParam.trim().toUpperCase() : '';
   });
 
+  const [initialQuizView, setInitialQuizView] = useState<'results' | 'play' | 'create'>(() => {
+    if (typeof window === 'undefined') return 'play';
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = params.get('view');
+    if (viewParam === 'results') return 'results';
+    return params.get('quiz') ? 'play' : 'create';
+  });
+
   const [isFriendshipQuizOpen, setIsFriendshipQuizOpen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     const params = new URLSearchParams(window.location.search);
     return Boolean(params.get('quiz'));
   });
-
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
 
   // Listen for history back/forward navigation
   useEffect(() => {
@@ -46,8 +51,10 @@ function MainContent() {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
       const quizParam = params.get('quiz');
+      const viewParam = params.get('view');
       if (quizParam) {
         setInitialQuizCode(quizParam.trim().toUpperCase());
+        setInitialQuizView(viewParam === 'results' ? 'results' : 'play');
         setIsFriendshipQuizOpen(true);
         return;
       }
@@ -73,9 +80,20 @@ function MainContent() {
     setIsFriendshipQuizOpen(false);
     setInitialQuizCode('');
     // Remove query params if quiz was in URL
-    if (typeof window !== 'undefined' && window.location.search.includes('quiz=')) {
-      window.history.pushState({}, '', window.location.pathname);
+    if (typeof window !== 'undefined' && (window.location.search.includes('quiz=') || window.location.search.includes('view='))) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('quiz');
+      params.delete('view');
+      const qs = params.toString();
+      const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
     }
+  };
+
+  const handleOpenQuiz = (code?: string, view?: 'results' | 'play' | 'create') => {
+    setInitialQuizCode(code ? code.trim().toUpperCase() : '');
+    setInitialQuizView(view || (code ? 'play' : 'create'));
+    setIsFriendshipQuizOpen(true);
   };
 
   if (loading) {
@@ -94,6 +112,7 @@ function MainContent() {
       return (
         <FriendshipQuizView
           initialQuizCode={initialQuizCode}
+          initialView={initialQuizView}
           onExit={handleReturnToHub}
         />
       );
@@ -104,11 +123,7 @@ function MainContent() {
       return (
         <RoomEntryView
           initialRoomCode={initialRoomCode}
-          onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-          onOpenFriendshipQuiz={(code) => {
-            if (code) setInitialQuizCode(code);
-            setIsFriendshipQuizOpen(true);
-          }}
+          onOpenFriendshipQuiz={(code, view) => handleOpenQuiz(code, view)}
         />
       );
     }
@@ -124,11 +139,7 @@ function MainContent() {
         return (
           <RoomEntryView
             initialRoomCode={initialRoomCode}
-            onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-            onOpenFriendshipQuiz={(code) => {
-              if (code) setInitialQuizCode(code);
-              setIsFriendshipQuizOpen(true);
-            }}
+            onOpenFriendshipQuiz={(code, view) => handleOpenQuiz(code, view)}
           />
         );
     }
@@ -136,7 +147,11 @@ function MainContent() {
 
   return (
     <div className="min-h-screen bg-[#eef4fa] text-slate-800 flex flex-col selection:bg-[#3b4cca] selection:text-white relative overflow-x-hidden">
-      <Navbar onGoHome={handleReturnToHub} />
+      <Navbar
+        onGoHome={handleReturnToHub}
+        onOpenQuiz={(code, view) => handleOpenQuiz(code, view)}
+        onCreateQuiz={() => handleOpenQuiz('', 'create')}
+      />
 
       <main className="relative z-10 flex-1 flex flex-col justify-start max-w-4xl w-full mx-auto pb-12">
         {renderView()}
@@ -150,11 +165,6 @@ function MainContent() {
           Designed for instant daylight mobile &amp; desktop play • Powered by React &amp; Supabase
         </p>
       </footer>
-
-      <SupabaseModal
-        isOpen={isSupabaseModalOpen}
-        onClose={() => setIsSupabaseModalOpen(false)}
-      />
     </div>
   );
 }
