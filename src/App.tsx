@@ -6,6 +6,7 @@ import { LobbyView } from './components/LobbyView';
 import { GameView } from './components/GameView';
 import { FinishedView } from './components/FinishedView';
 import { FriendshipQuizView } from './components/FriendshipQuizView';
+import { PwaNotificationBanner } from './components/PwaNotificationBanner';
 import { sanitizeRoomCode } from './lib/roomCode';
 
 function MainContent() {
@@ -152,6 +153,8 @@ function MainContent() {
         onOpenQuiz={(code, view) => handleOpenQuiz(code, view)}
         onCreateQuiz={() => handleOpenQuiz('', 'create')}
       />
+
+      <PwaNotificationBanner />
 
       <main className="relative z-10 flex-1 flex flex-col justify-start max-w-4xl w-full mx-auto pb-12">
         {renderView()}

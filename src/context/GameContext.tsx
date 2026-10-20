@@ -365,12 +365,13 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     session?.id,
   ]);
 
-  // Helper to pick random prompt from DB or fallback
+  // Helper to pick random prompt from DB or fallback (merging SEED_PROMPTS so all dilemmas are available)
   const pickRandomPrompt = async (
     category: string,
     usedIds: string[] = []
   ): Promise<VoteRevealPrompt> => {
     const supabase = getSupabase();
+    let dbPrompts: VoteRevealPrompt[] = [];
     try {
       const { data: prompts } = await supabase
         .from('game_prompts')
@@ -379,25 +380,38 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('category', category);
 
       if (prompts && prompts.length > 0) {
-        const unused = prompts.filter((p) => !usedIds.includes(p.id));
-        const pool = unused.length > 0 ? unused : prompts;
-        const selected = pool[Math.floor(Math.random() * pool.length)];
-        return {
-          id: selected.id,
-          prompt_text: selected.prompt_text,
-          options: selected.options as [string, string],
-          category: selected.category,
-        };
+        dbPrompts = prompts.map((p) => ({
+          id: p.id,
+          prompt_text: p.prompt_text,
+          options: p.options as [string, string],
+          category: p.category,
+        }));
       }
     } catch (e) {
       console.warn('Could not query game_prompts from DB, using fallback prompts:', e);
     }
 
-    // Local fallback from SEED_PROMPTS
-    const catPrompts = SEED_PROMPTS.filter((p) => p.category === category);
-    const pool = catPrompts.length > 0 ? catPrompts : SEED_PROMPTS;
-    const unused = pool.filter((p) => !usedIds.includes(p.id));
-    const finalPool = unused.length > 0 ? unused : pool;
+    // Local prompts from SEED_PROMPTS matching category
+    const localCatPrompts = SEED_PROMPTS.filter((p) => p.category === category);
+    const localPool = localCatPrompts.length > 0 ? localCatPrompts : SEED_PROMPTS;
+
+    // Merge DB prompts and local SEED_PROMPTS so all 58 dilemmas are always available
+    const mergedMap = new Map<string, VoteRevealPrompt>();
+    for (const p of localPool) {
+      mergedMap.set(p.id, {
+        id: p.id,
+        prompt_text: p.prompt_text,
+        options: p.options,
+        category: p.category,
+      });
+    }
+    for (const p of dbPrompts) {
+      mergedMap.set(p.id, p);
+    }
+
+    const mergedList = Array.from(mergedMap.values());
+    const unused = mergedList.filter((p) => !usedIds.includes(p.id));
+    const finalPool = unused.length > 0 ? unused : mergedList;
     const selected = finalPool[Math.floor(Math.random() * finalPool.length)];
     return {
       id: selected.id,

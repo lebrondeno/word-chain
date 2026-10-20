@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
 import { soundManager } from '../lib/audio';
 import {
@@ -9,10 +9,20 @@ import {
   LogOut,
   Share2,
   Home,
+  Download,
+  Smartphone,
+  Share,
+  PlusSquare,
+  X,
 } from 'lucide-react';
 import { RulesModal } from './RulesModal';
 import { ShareModal } from './ShareModal';
 import { MyResultsModal } from './MyResultsModal';
+import {
+  subscribePwaState,
+  promptPwaInstall,
+  type PwaState,
+} from '../utils/pwa';
 
 interface NavbarProps {
   onGoHome?: () => void;
@@ -30,10 +40,35 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isRulesOpen, setIsRulesOpen] = useState(false);
   const [isMyResultsOpen, setIsMyResultsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [showIosGuide, setShowIosGuide] = useState(false);
+
+  const [pwaState, setPwaState] = useState<PwaState>(() => ({
+    isStandalone: false,
+    isInstallable: false,
+    isUpdateAvailable: false,
+    isIos: false,
+    hasNotificationSupport: false,
+    notificationPermission: 'unsupported',
+  }));
+
+  useEffect(() => {
+    const unsub = subscribePwaState((state) => {
+      setPwaState(state);
+    });
+    return () => unsub();
+  }, []);
 
   const handleToggleSound = () => {
     const nextMuted = soundManager.toggleMute();
     setIsMuted(nextMuted);
+  };
+
+  const handleInstallClick = async () => {
+    if (pwaState.isIos) {
+      setShowIosGuide(true);
+      return;
+    }
+    await promptPwaInstall();
   };
 
   const handleHomeClick = () => {
@@ -101,6 +136,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Home className="w-5 h-5" />
             </button>
+
+            {/* Install App Button (hidden automatically once installed in standalone mode) */}
+            {!pwaState.isStandalone && (
+              <button
+                type="button"
+                onClick={handleInstallClick}
+                title="Install PartyHub App on your device"
+                className="px-2.5 py-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 transition flex items-center gap-1.5 text-xs font-bold active:scale-95"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Install App</span>
+                <span className="sm:hidden">Install</span>
+              </button>
+            )}
 
             {/* My Results Button (Replaces DB setup button) */}
             <button
@@ -171,6 +220,90 @@ export const Navbar: React.FC<NavbarProps> = ({
           onClose={() => setIsShareOpen(false)}
           roomCode={session.room_code}
         />
+      )}
+
+      {/* iOS Safari Install Guide Modal */}
+      {showIosGuide && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in text-slate-800">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-700">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-[#0b2545]">
+                    Install on iOS Safari
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Add PartyHub to your iPhone / iPad Home Screen
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowIosGuide(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 bg-[#f8fafc] rounded-2xl p-4 border border-slate-200 text-xs">
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-[#0b2545] text-white font-bold flex items-center justify-center shrink-0 text-xs mt-0.5">
+                  1
+                </div>
+                <div className="space-y-0.5">
+                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <span>Tap the Safari Share button</span>
+                    <Share className="w-3.5 h-3.5 text-blue-600" />
+                  </div>
+                  <p className="text-slate-500 text-[11px]">
+                    Located at the bottom of your Safari browser bar.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-[#0b2545] text-white font-bold flex items-center justify-center shrink-0 text-xs mt-0.5">
+                  2
+                </div>
+                <div className="space-y-0.5">
+                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <span>Select &ldquo;Add to Home Screen&rdquo;</span>
+                    <PlusSquare className="w-3.5 h-3.5 text-slate-700" />
+                  </div>
+                  <p className="text-slate-500 text-[11px]">
+                    Scroll down through the share options.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-[#0b2545] text-white font-bold flex items-center justify-center shrink-0 text-xs mt-0.5">
+                  3
+                </div>
+                <div className="space-y-0.5">
+                  <div className="font-bold text-slate-900">
+                    Tap &ldquo;Add&rdquo; in the top-right corner
+                  </div>
+                  <p className="text-slate-500 text-[11px]">
+                    PartyHub will appear on your Home Screen with instant access!
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowIosGuide(false)}
+              className="w-full py-3 rounded-full bg-[#0b2545] hover:bg-[#13315c] text-white font-bold text-xs transition active:scale-98"
+            >
+              Got It, Thanks!
+            </button>
+          </div>
+        </div>
       )}
     </>
   );

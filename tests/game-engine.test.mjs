@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createJiti } from 'jiti';
 
 const jiti = createJiti(import.meta.url);
@@ -54,6 +57,19 @@ const {
   saveQuizDraft,
   clearQuizDraft,
 } = await jiti.import('../src/lib/savedQuizzes.ts');
+
+const {
+  getPwaState,
+  isPwaInstalled,
+  isIosDevice,
+  hasNotificationSupport,
+  getNotificationPermission,
+  subscribePwaState,
+  promptPwaInstall,
+  applyAppUpdate,
+  checkForAppUpdate,
+  APP_BUILD_INFO,
+} = await jiti.import('../src/utils/pwa.ts');
 
 test('Word Normalization and Letter Extraction', () => {
   assert.equal(normalizeWord('  Tokyo  '), 'tokyo');
@@ -539,4 +555,118 @@ test('Friendship Test - In-Progress Quiz Draft Persistence (Survive Page Refresh
 
   clearQuizDraft();
   assert.equal(getQuizDraft(), null);
+});
+
+test('PWA Manifest & App Icons Integrity', () => {
+  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const manifestPath = path.join(rootDir, 'public', 'manifest.webmanifest');
+  assert.ok(fs.existsSync(manifestPath), 'manifest.webmanifest must exist');
+
+  const raw = fs.readFileSync(manifestPath, 'utf8');
+  const manifest = JSON.parse(raw);
+
+  assert.equal(manifest.name, 'PartyHub - Word Chain, Would You Rather & Friendship Quiz');
+  assert.equal(manifest.short_name, 'PartyHub');
+  assert.equal(manifest.start_url, '/');
+  assert.equal(manifest.display, 'standalone');
+  assert.equal(manifest.background_color, '#eef4fa');
+  assert.equal(manifest.theme_color, '#0b2545');
+
+  // Icons verification
+  assert.ok(Array.isArray(manifest.icons) && manifest.icons.length >= 2);
+  const icon192 = manifest.icons.find((i) => i.sizes === '192x192' && i.src === '/pwa-192x192.png');
+  const icon512 = manifest.icons.find((i) => i.sizes === '512x512' && i.src === '/pwa-512x512.png');
+  const maskableIcon = manifest.icons.find((i) => i.purpose?.includes('maskable'));
+
+  assert.ok(icon192, 'Manifest must have 192x192 icon');
+  assert.ok(icon512, 'Manifest must have 512x512 icon');
+  assert.ok(maskableIcon, 'Manifest must include maskable icon');
+
+  // Physical PNG files
+  const pwa192Path = path.join(rootDir, 'public', 'pwa-192x192.png');
+  const pwa512Path = path.join(rootDir, 'public', 'pwa-512x512.png');
+  const appleIconPath = path.join(rootDir, 'public', 'apple-touch-icon.png');
+  const swPath = path.join(rootDir, 'public', 'sw.js');
+
+  assert.ok(fs.existsSync(pwa192Path), 'pwa-192x192.png must exist');
+  assert.ok(fs.statSync(pwa192Path).size > 1000, 'pwa-192x192.png must be non-empty');
+
+  assert.ok(fs.existsSync(pwa512Path), 'pwa-512x512.png must exist');
+  assert.ok(fs.statSync(pwa512Path).size > 5000, 'pwa-512x512.png must be non-empty');
+
+  assert.ok(fs.existsSync(appleIconPath), 'apple-touch-icon.png must exist');
+  assert.ok(fs.statSync(appleIconPath).size > 1000, 'apple-touch-icon.png must be non-empty');
+
+  assert.ok(fs.existsSync(swPath), 'sw.js must exist');
+  const swContent = fs.readFileSync(swPath, 'utf8');
+  assert.ok(swContent.includes('SKIP_WAITING'), 'sw.js must handle SKIP_WAITING message');
+  assert.ok(swContent.includes('CACHE_VERSION'), 'sw.js must manage cache version');
+});
+
+test('PWA Utilities - Headless and SSR Safe Execution', async () => {
+  assert.ok(APP_BUILD_INFO.version);
+  assert.ok(APP_BUILD_INFO.buildTime);
+
+  // Calling utils in Node should never throw
+  assert.equal(typeof isPwaInstalled(), 'boolean');
+  assert.equal(typeof isIosDevice(), 'boolean');
+  assert.equal(typeof hasNotificationSupport(), 'boolean');
+  assert.equal(typeof getNotificationPermission(), 'string');
+
+  const state = getPwaState();
+  assert.equal(typeof state.isStandalone, 'boolean');
+  assert.equal(typeof state.isInstallable, 'boolean');
+  assert.equal(typeof state.isUpdateAvailable, 'boolean');
+  assert.equal(typeof state.isIos, 'boolean');
+  assert.equal(typeof state.hasNotificationSupport, 'boolean');
+
+  // Subscription works
+  let receivedState = null;
+  const unsub = subscribePwaState((s) => {
+    receivedState = s;
+  });
+  assert.ok(receivedState);
+  assert.equal(typeof receivedState.isStandalone, 'boolean');
+  unsub();
+
+  // Async helpers do not throw
+  const installResult = await promptPwaInstall();
+  assert.equal(installResult, false);
+
+  const checkResult = await checkForAppUpdate();
+  assert.equal(checkResult, false);
+
+  assert.doesNotThrow(() => applyAppUpdate());
+});
+
+test('Would You Rather - Full 58 Dilemmas Pool Integrity & Merging', () => {
+  assert.equal(SEED_PROMPTS.length, 58, `Expected exactly 58 seed dilemmas, found ${SEED_PROMPTS.length}`);
+
+  const generalPrompts = SEED_PROMPTS.filter((p) => p.category === 'general');
+  const couplesPrompts = SEED_PROMPTS.filter((p) => p.category === 'couples');
+
+  assert.equal(generalPrompts.length, 31, 'Expected 31 general dilemmas (9 initial + 22 added)');
+  assert.equal(couplesPrompts.length, 27, 'Expected 27 couples dilemmas (7 initial + 20 added)');
+
+  // Simulate prompt merging logic from GameContext
+  const mockDbPrompts = [
+    {
+      id: 'db-custom-1',
+      engine: 'vote_reveal',
+      category: 'general',
+      prompt_text: 'DB prompt 1',
+      options: ['Option A', 'Option B'],
+    },
+  ];
+
+  const mergedMap = new Map();
+  for (const p of generalPrompts) {
+    mergedMap.set(p.id, p);
+  }
+  for (const p of mockDbPrompts) {
+    mergedMap.set(p.id, p);
+  }
+
+  // 31 general prompts + 1 db prompt = 32
+  assert.equal(mergedMap.size, 32);
 });
