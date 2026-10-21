@@ -229,7 +229,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
                 <div>
                   <h4 className="font-bold text-[#0b2545] text-sm mb-1">1. Classic 3x3 Grid</h4>
                   <p>
-                    Players take turns placing their mark (<strong className="text-[#3b4cca]">X</strong> or <strong className="text-[#f43f5e]">O</strong>). First to line up 3 marks horizontally, vertically, or diagonally wins!
+                    Players take turns placing their mark (<strong className="text-[#3b4cca]">X</strong> or <strong className="text-[#f43f5e]">O</strong>). First to line up 3 marks horizontally, vertically, or diagonally wins! In the default <strong>Tactical Shift</strong> mode the board starts with 3 X on the top row and 3 O on the bottom row: tap one of your pieces, then tap a glowing open square to move it. Line up your 3 pieces on any row, column or diagonal <strong>except your own starting home row</strong> to win.
                   </p>
                 </div>
               </div>

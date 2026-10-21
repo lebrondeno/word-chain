@@ -166,7 +166,7 @@ export const VoteRevealGameView: React.FC = () => {
       </div>
 
       {/* 2. Main Game Arena Card */}
-      <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-5">
+      <div className="glass-card glow-border rounded-3xl p-6 shadow-sm border border-slate-200 space-y-5">
         {/* Prompt Header */}
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-[#3b4cca] text-xs font-bold">
@@ -495,7 +495,7 @@ export const VoteRevealGameView: React.FC = () => {
                   >
                     {player.display_name.charAt(0).toUpperCase()}
                   </div>
-                  <div className="truncate font-medium">
+                  <div className="break-words font-medium">
                     {player.display_name} {isMe ? '(You)' : ''}
                   </div>
                 </div>

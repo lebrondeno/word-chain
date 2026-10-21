@@ -69,6 +69,9 @@ export interface GameConfig {
   player_o_id?: string; // tic_tac_toe
   winner?: TicTacToeMark | 'draw' | null; // tic_tac_toe
   winning_line?: [number, number, number] | null; // tic_tac_toe
+  ttt_mode?: 'tactical' | 'classic'; // tic_tac_toe variant
+  move_rule?: 'adjacent' | 'anywhere'; // tic_tac_toe tactical
+  move_count?: number; // tic_tac_toe tactical
   [key: string]: unknown;
 }
 

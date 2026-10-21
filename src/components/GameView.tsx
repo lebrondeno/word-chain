@@ -166,7 +166,7 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
 
       {/* 2. Main Game Arena Card */}
       <div
-        className={`bg-white rounded-3xl p-6 shadow-sm border transition-all duration-300 ${
+        className={`glass-card glow-border rounded-3xl p-6 shadow-sm border transition-all duration-300 ${
           isMyTurn
             ? 'border-[#3b4cca] shadow-md ring-2 ring-blue-100'
             : 'border-slate-200'
@@ -335,7 +335,7 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
                   >
                     {player.display_name.charAt(0).toUpperCase()}
                   </div>
-                  <div className="truncate font-medium">
+                  <div className="break-words font-medium">
                     {player.display_name} {isMe ? '(You)' : ''}
                   </div>
                 </div>

@@ -111,7 +111,7 @@ export const MostLikelyGameView: React.FC = () => {
       }`}
     >
       {/* 1. Header Bar: Engine, Category, Round & Timer Bar */}
-      <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-200">
+      <div className="glass-card glow-border rounded-3xl p-4 shadow-sm border border-slate-200">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2.5">
             <span className="text-2xl">{categoryInfo.icon}</span>
@@ -159,7 +159,7 @@ export const MostLikelyGameView: React.FC = () => {
       </div>
 
       {/* 2. Main Question Card */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+      <div className="glass-card glow-border rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
         {/* Status Pill */}
         <div className="text-center">
           {isRevealed ? (
@@ -218,7 +218,7 @@ export const MostLikelyGameView: React.FC = () => {
                     {opt.display_name.charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs sm:text-sm font-bold text-[#0b2545] truncate">
+                    <div className="text-xs sm:text-sm font-bold text-[#0b2545] break-words">
                       {opt.display_name} {opt.id === localPlayer?.playerId ? '(You)' : ''}
                     </div>
                     {isRevealed && (

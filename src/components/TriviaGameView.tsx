@@ -194,7 +194,7 @@ export const TriviaGameView: React.FC = () => {
       }`}
     >
       {/* 1. Header Bar: Engine, Category, Round & Timer Bar */}
-      <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-200">
+      <div className="glass-card glow-border rounded-3xl p-4 shadow-sm border border-slate-200">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2.5">
             <span className="text-2xl">{categoryInfo.icon}</span>
@@ -243,7 +243,7 @@ export const TriviaGameView: React.FC = () => {
       </div>
 
       {/* 2. Main Question Card */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+      <div className="glass-card glow-border rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
         {/* Status Pill */}
         <div className="text-center">
           {isRevealed ? (

@@ -175,7 +175,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             const params = new URLSearchParams(window.location.search);
             params.set('quiz', res.quiz.code);
             params.set('view', 'results');
-            window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+            window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}`);
           }
         } else {
           setMode('play_join');
@@ -365,7 +365,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
         const params = new URLSearchParams(window.location.search);
         params.set('quiz', res.code);
         params.set('view', 'results');
-        window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+        window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}`);
       }
 
       // Fetch empty or initial leaderboard
@@ -456,7 +456,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             const params = new URLSearchParams(window.location.search);
             params.set('quiz', activeQuiz.code);
             params.set('view', 'results');
-            window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+            window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}`);
           }
 
           // Fetch updated leaderboard
@@ -491,7 +491,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
   if (mode === 'create_setup') {
     return (
       <div className="w-full max-w-lg mx-auto px-4 py-6 space-y-6 animate-fade-in text-slate-800">
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 text-center space-y-3 relative overflow-hidden">
+        <div className="glass-card rounded-3xl p-6 shadow-sm border border-slate-200 text-center space-y-3 relative overflow-hidden">
           <div className="w-16 h-16 rounded-2xl bg-[#eef4fa] border border-blue-100 flex items-center justify-center mx-auto shadow-sm">
             <span className="text-3xl">🤝</span>
           </div>
@@ -503,7 +503,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
           </p>
         </div>
 
-        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-5">
+        <div className="glass-card rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-5">
           {error && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs">
               {error}
@@ -615,7 +615,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
     return (
       <div className="w-full max-w-xl mx-auto px-4 py-5 space-y-4 animate-fade-in text-slate-800">
         {/* Top Header Card */}
-        <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-200 space-y-3">
+        <div className="glass-card rounded-3xl p-4 shadow-sm border border-slate-200 space-y-3">
           <div className="flex items-center justify-between text-xs">
             <div className="flex items-center gap-2">
               <span className="font-bold text-[#0b2545]">Creating: {creatorName}&apos;s Quiz</span>
@@ -672,7 +672,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
         </div>
 
         {/* Question & Options Area */}
-        <div className="bg-white rounded-3xl p-5 sm:p-7 shadow-sm border border-slate-200 space-y-4">
+        <div className="glass-card rounded-3xl p-5 sm:p-7 shadow-sm border border-slate-200 space-y-4">
           {error && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs">
               {error}
@@ -885,7 +885,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
   if (mode === 'created_summary') {
     return (
       <div className="w-full max-w-lg mx-auto px-4 py-6 space-y-6 animate-fade-in text-slate-800">
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 text-center space-y-3">
+        <div className="glass-card rounded-3xl p-6 shadow-sm border border-slate-200 text-center space-y-3">
           <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto shadow-sm">
             <CheckCircle2 className="w-9 h-9 text-[#1f9d55]" />
           </div>
@@ -906,7 +906,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
         />
 
         {/* Live Leaderboard Card */}
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
+        <div className="glass-card rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Trophy className="w-5 h-5 text-amber-500" />
@@ -968,7 +968,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
   if (mode === 'play_join' && activeQuiz) {
     return (
       <div className="w-full max-w-lg mx-auto px-4 py-6 space-y-6 animate-fade-in text-slate-800">
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 text-center space-y-3">
+        <div className="glass-card rounded-3xl p-6 shadow-sm border border-slate-200 text-center space-y-3">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#3b4cca] to-[#1f9d55] text-white flex items-center justify-center mx-auto shadow-md text-2xl font-black">
             🤝
           </div>
@@ -983,7 +983,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
           </p>
         </div>
 
-        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-4">
+        <div className="glass-card rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-4">
           {error && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs">
               {error}
@@ -1026,7 +1026,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
                   const params = new URLSearchParams(window.location.search);
                   params.set('quiz', activeQuiz.code);
                   params.set('view', 'results');
-                  window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+                  window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}`);
                 }
               }}
               className="w-full py-2.5 px-4 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-2 border border-slate-200"
@@ -1039,7 +1039,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
 
         {/* Existing Leaderboard Preview */}
         {playLeaderboard.length > 0 && (
-          <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
+          <div className="glass-card rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
             <h3 className="font-bold text-sm text-[#0b2545] flex items-center gap-2">
               <Trophy className="w-4 h-4 text-amber-500" />
               <span>Current Leaderboard ({playLeaderboard.length} players)</span>
@@ -1076,7 +1076,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
     return (
       <div className="w-full max-w-xl mx-auto px-4 py-5 space-y-4 animate-fade-in text-slate-800">
         {/* Progress Header Card */}
-        <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-200 space-y-3">
+        <div className="glass-card rounded-3xl p-4 shadow-sm border border-slate-200 space-y-3">
           <div className="flex items-center justify-between text-xs">
             <span className="font-bold text-[#0b2545]">
               Playing: {activeQuiz.creator_name}&apos;s Quiz
@@ -1110,7 +1110,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
         </div>
 
         {/* Question Heading & Options Area */}
-        <div className="bg-white rounded-3xl p-5 sm:p-7 shadow-sm border border-slate-200 space-y-4">
+        <div className="glass-card rounded-3xl p-5 sm:p-7 shadow-sm border border-slate-200 space-y-4">
           <div className="text-center px-2">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
               Guess {activeQuiz.creator_name}&apos;s choice
@@ -1212,7 +1212,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
     return (
       <div className="w-full max-w-lg mx-auto px-4 py-6 space-y-6 animate-fade-in text-slate-800">
         {/* Top Result Card */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 text-center space-y-4">
+        <div className="glass-card rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 text-center space-y-4">
           <h2 className="text-xl sm:text-2xl font-black text-[#0b2545]">
             😍 Congrats {friendName}! 😍
           </h2>
@@ -1275,7 +1275,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
                   params.delete('quiz');
                   params.delete('view');
                   const qs = params.toString();
-                  window.history.replaceState({}, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+                  window.history.replaceState(window.history.state, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
                 }
               }}
               className="w-full py-4 px-6 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-black text-sm shadow-lg shadow-emerald-700/25 transition flex items-center justify-center gap-2 active:scale-[0.98]"
@@ -1287,7 +1287,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
         </div>
 
         {/* Who Knows Creator Best Leaderboard */}
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
+        <div className="glass-card rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Trophy className="w-5 h-5 text-amber-500" />

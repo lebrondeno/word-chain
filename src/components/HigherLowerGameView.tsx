@@ -78,7 +78,7 @@ export const HigherLowerGameView: React.FC = () => {
   return (
     <div className="w-full max-w-lg mx-auto px-4 py-4 space-y-4 animate-fade-in text-slate-800">
       {/* 1. Header Bar: Category, Turn Timer */}
-      <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-200">
+      <div className="glass-card glow-border rounded-3xl p-4 shadow-sm border border-slate-200">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2.5">
             <span className="text-2xl">{categoryInfo.icon}</span>
@@ -127,7 +127,7 @@ export const HigherLowerGameView: React.FC = () => {
 
       {/* 2. Main Guess Arena Card */}
       <div
-        className={`bg-white rounded-3xl p-5 sm:p-6 shadow-sm border transition-all duration-300 ${
+        className={`glass-card glow-border rounded-3xl p-5 sm:p-6 shadow-sm border transition-all duration-300 ${
           isMyTurn ? 'border-[#3b4cca] shadow-md ring-2 ring-blue-100' : 'border-slate-200'
         }`}
       >
@@ -210,7 +210,7 @@ export const HigherLowerGameView: React.FC = () => {
               ) : (
                 <Scale className="w-4 h-4 text-amber-600 shrink-0" />
               )}
-              <span className="font-semibold truncate">
+              <span className="font-semibold break-words">
                 {lastGuess.player_name} guessed {lastGuess.guess.toUpperCase()}
               </span>
             </div>
@@ -249,7 +249,7 @@ export const HigherLowerGameView: React.FC = () => {
                     : 'bg-slate-50 border-slate-200 text-slate-700'
                 }`}
               >
-                <span className="truncate font-semibold">
+                <span className="break-words font-semibold">
                   {player.display_name} {isMe ? '(You)' : ''}
                 </span>
                 {isElim && <span className="text-[10px] text-rose-600 font-bold ml-1">OUT</span>}

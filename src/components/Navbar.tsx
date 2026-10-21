@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../context/GameContext';
 import { soundManager } from '../lib/audio';
+import { useHistoryLayer } from '../hooks/useHistoryLayer';
 import {
   Volume2,
   VolumeX,
@@ -42,6 +43,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isMyResultsOpen, setIsMyResultsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [showIosGuide, setShowIosGuide] = useState(false);
+
+  // Back button closes modals instead of leaving the app
+  useHistoryLayer(isRulesOpen, () => setIsRulesOpen(false));
+  useHistoryLayer(isMyResultsOpen, () => setIsMyResultsOpen(false));
+  useHistoryLayer(isShareOpen, () => setIsShareOpen(false));
+  useHistoryLayer(showIosGuide, () => setShowIosGuide(false));
 
   const [pwaState, setPwaState] = useState<PwaState>(() => ({
     isStandalone: false,

@@ -44,3 +44,144 @@
 .animate-pop {
   animation: pop 0.25s ease-out forwards;
 }
+
+/* ==========================================================
+   Futuristic glass + tactile UI layer
+   ========================================================== */
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    overscroll-behavior-y: none;
+    background-image:
+      radial-gradient(60rem 40rem at 10% -10%, rgba(34, 211, 238, 0.28), transparent 60%),
+      radial-gradient(50rem 36rem at 100% 0%, rgba(99, 102, 241, 0.26), transparent 60%),
+      radial-gradient(46rem 34rem at 50% 110%, rgba(16, 185, 129, 0.22), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  /* Springy touch feedback on every enabled button */
+  button:not(:disabled) {
+    transition:
+      scale 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+      box-shadow 0.2s ease,
+      background-color 0.2s ease,
+      border-color 0.2s ease,
+      color 0.2s ease,
+      opacity 0.2s ease;
+    touch-action: manipulation;
+  }
+
+  button:not(:disabled):active {
+    scale: 0.97;
+  }
+}
+
+@layer components {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.62);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    backdrop-filter: blur(14px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow:
+      0 8px 28px rgba(59, 76, 202, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  .glass-dark {
+    background: linear-gradient(135deg, rgba(11, 37, 69, 0.92), rgba(30, 42, 120, 0.9));
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 10px 30px rgba(11, 37, 69, 0.35);
+    color: #fff;
+  }
+
+  /* Gradient glowing border (cyan -> indigo -> emerald) */
+  .glow-border {
+    position: relative;
+  }
+
+  .glow-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    padding: 1.5px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, #22d3ee, #6366f1 50%, #10b981);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  .glow-border:hover::before,
+  .glow-border:focus-visible::before,
+  .glow-border[data-active='true']::before {
+    opacity: 1;
+  }
+
+  .btn-neon {
+    background: linear-gradient(135deg, #06b6d4, #6366f1);
+    color: #fff;
+    box-shadow:
+      0 6px 18px rgba(99, 102, 241, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.25) inset;
+  }
+
+  .btn-neon-emerald {
+    background: linear-gradient(135deg, #10b981, #06b6d4);
+    color: #fff;
+    box-shadow:
+      0 6px 18px rgba(16, 185, 129, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.25) inset;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .safe-bottom {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+}
+
+@keyframes badgePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.55); }
+  50% { box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); }
+}
+
+@keyframes pieceGlow {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.55), 0 0 14px rgba(34, 211, 238, 0.55); }
+  50% { box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.7), 0 0 24px rgba(99, 102, 241, 0.7); }
+}
+
+@keyframes floatY {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.animate-badge-pulse {
+  animation: badgePulse 2s ease-out infinite;
+}
+
+.animate-piece-glow {
+  animation: pieceGlow 1.4s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: floatY 3s ease-in-out infinite;
+}

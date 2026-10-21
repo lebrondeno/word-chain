@@ -17,6 +17,18 @@ import { validateWordSubmission, getLastLetter } from '../data';
 import { SEED_PROMPTS, SEED_MOST_LIKELY_PROMPTS, SEED_TRIVIA_PROMPTS } from '../data/prompts';
 import { soundManager } from '../lib/audio';
 import { getHigherLowerProvider } from '../lib/higherLowerProviders';
+import {
+  DEFAULT_MOVE_RULE,
+  DEFAULT_TIC_TAC_TOE_VARIANT,
+  applyPieceMove,
+  evaluateBoard,
+  getInitialBoard,
+  getOpponent,
+  isLegalPieceMove,
+  type TicTacToeBoard,
+  type TicTacToeMoveRule,
+  type TicTacToeVariant,
+} from '../lib/ticTacToe';
 
 const STORAGE_SESSION_KEY = 'word_chain_player_session_v1';
 
@@ -72,6 +84,8 @@ interface GameContextType {
     difficulty?: string
   ) => Promise<{ success: boolean; error?: string }>;
   startGame: (selectedPlayerIds?: string[]) => Promise<{ success: boolean; error?: string }>;
+  setTicTacToeVariant: (variant: TicTacToeVariant) => Promise<{ success: boolean; error?: string }>;
+  submitPieceMove: (from: number, to: number) => Promise<{ success: boolean; error?: string }>;
   submitWord: (word: string) => Promise<{ success: boolean; error?: string }>;
   submitGuess: (guess: 'higher' | 'lower') => Promise<{ success: boolean; error?: string }>;
   submitMove: (cellIndex: number) => Promise<{ success: boolean; error?: string }>;
@@ -365,7 +379,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         params.set('room', session.room_code);
         params.delete('quiz');
         params.delete('view');
-        window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+        window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}`);
       }
     }
   }, [session?.room_code]);
@@ -900,11 +914,74 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Action: Start Game
+  // Host: choose Tactical (pre-placed pieces, default) or Classic (empty board)
+  // for a tic_tac_toe room. Stored in game_config so every client sees it.
+  const setTicTacToeVariant = async (variant: TicTacToeVariant) => {
+    if (!session || !localPlayer?.isHost) return { success: false, error: 'Host only' };
+    const supabase = getSupabase();
+    try {
+      const { data: updated, error: updateErr } = await supabase
+        .from('game_sessions')
+        .update({ game_config: { ...(session.game_config || {}), ttt_mode: variant } })
+        .eq('id', session.id)
+        .select()
+        .single();
+      if (updateErr) throw updateErr;
+      setSession(updated as GameSession);
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to update Tic Tac Toe mode';
+      setError(message);
+      return { success: false, error: message };
+    }
+  };
+
+  // Action: Start Game. Tic Tac Toe rooms in Tactical mode get the pre-placed
+  // 3 X / 3 O board applied right after the server/fallback start.
+  const startGame = async (selectedPlayerIds?: string[]) => {
+    const variant = ((session?.game_config?.ttt_mode as TicTacToeVariant | undefined) ||
+      DEFAULT_TIC_TAC_TOE_VARIANT) as TicTacToeVariant;
+    const isTicTacToe = session?.game_type === 'tic_tac_toe';
+    const sessionId = session?.id;
+    const result = await startGameCore(selectedPlayerIds);
+    if (!result.success || !isTicTacToe || !sessionId) return result;
+
+    try {
+      const supabase = getSupabase();
+      const { data: fresh, error: fetchErr } = await supabase
+        .from('game_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single();
+      if (fetchErr || !fresh) throw fetchErr || new Error('Session not found');
+      const config = {
+        ...((fresh as GameSession).game_config || {}),
+        ttt_mode: variant,
+        move_rule: DEFAULT_MOVE_RULE,
+        move_count: 0,
+        ...(variant === 'tactical' ? { board: getInitialBoard('tactical') } : {}),
+      };
+      const { data: patched, error: patchErr } = await supabase
+        .from('game_sessions')
+        .update({ game_config: config })
+        .eq('id', sessionId)
+        .select()
+        .single();
+      if (patchErr) throw patchErr;
+      setSession(patched as GameSession);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to prepare Tic Tac Toe board';
+      setError(message);
+      return { success: false, error: message };
+    }
+    return result;
+  };
+
+  // Action: Start Game (server/fallback core)
   // selectedPlayerIds: 'tic_tac_toe' engine only - the host's chosen pair of
   // players to seat as X/O when more than 2 have joined the room (see
   // LobbyView's player picker). Ignored by every other game type.
-  const startGame = async (selectedPlayerIds?: string[]) => {
+  const startGameCore = async (selectedPlayerIds?: string[]) => {
     if (!session || !localPlayer) return { success: false, error: 'No active session' };
     setError(null);
     const supabase = getSupabase();
@@ -1539,6 +1616,86 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Action: Move a piece (Tic Tac Toe - Tactical 3-Piece Shift mode)
+  const submitPieceMove = async (from: number, to: number) => {
+    if (!session || !localPlayer) return { success: false, error: 'Session not active' };
+    if (!isMyTurn) {
+      soundManager.playError();
+      return { success: false, error: 'It is not your turn!' };
+    }
+
+    const config = session.game_config || {};
+    const board = (config.board || Array(9).fill(null)) as TicTacToeBoard;
+    const mark: TicTacToeMark | null =
+      localPlayer.playerId === config.player_x_id ? 'X' : localPlayer.playerId === config.player_o_id ? 'O' : null;
+    if (!mark) return { success: false, error: 'You are spectating this match' };
+
+    const rule = ((config.move_rule as TicTacToeMoveRule | undefined) || DEFAULT_MOVE_RULE) as TicTacToeMoveRule;
+    if (!isLegalPieceMove(board, mark, { from, to }, rule)) {
+      soundManager.playError();
+      setError('That piece cannot move there');
+      return { success: false, error: 'Illegal move' };
+    }
+
+    const supabase = getSupabase();
+    try {
+      const nextBoard = applyPieceMove(board, { from, to });
+      const moveCount = (Number(config.move_count) || 0) + 1;
+      const result = evaluateBoard(nextBoard, 'tactical', { moveCount, toMove: getOpponent(mark), rule });
+      const newConfig = {
+        ...config,
+        board: nextBoard,
+        move_count: moveCount,
+        winner: result.winner ? result.winner : result.isDraw ? 'draw' : null,
+        winning_line: result.winningLine,
+      };
+
+      let patch: Record<string, unknown>;
+      if (result.winner) {
+        soundManager.playWinner();
+        await supabase
+          .from('game_players')
+          .update({ total_score: (players.find((p) => p.id === localPlayer.playerId)?.total_score || 0) + 2 })
+          .eq('id', localPlayer.playerId);
+        patch = { game_config: newConfig, status: 'finished', turn_deadline: null };
+      } else if (result.isDraw) {
+        soundManager.playWinner();
+        await Promise.all(
+          [config.player_x_id, config.player_o_id]
+            .filter((id): id is string => Boolean(id))
+            .map((id) =>
+              supabase
+                .from('game_players')
+                .update({ total_score: (players.find((p) => p.id === id)?.total_score || 0) + 1 })
+                .eq('id', id)
+            )
+        );
+        patch = { game_config: newConfig, status: 'finished', turn_deadline: null };
+      } else {
+        soundManager.playCorrect();
+        patch = {
+          game_config: newConfig,
+          current_turn_index: (session.current_turn_index + 1) % 2,
+          turn_deadline: new Date(Date.now() + 20000).toISOString(),
+        };
+      }
+
+      const { data: updatedSession, error: updateErr } = await supabase
+        .from('game_sessions')
+        .update(patch)
+        .eq('id', session.id)
+        .select()
+        .single();
+      if (updateErr) throw updateErr;
+      setSession(updatedSession as GameSession);
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to move piece';
+      setError(message);
+      return { success: false, error: message };
+    }
+  };
+
   // Action: Submit Vote (Vote & Reveal)
   const submitVote = async (choice: string) => {
     if (!session || !localPlayer) return { success: false, error: 'No active session' };
@@ -2067,7 +2224,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (params.has('room')) {
         params.delete('room');
         const qs = params.toString();
-        window.history.replaceState({}, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+        window.history.replaceState(window.history.state, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
       }
     }
     updateLocalPlayer(null);
@@ -2106,6 +2263,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         joinGame,
         setGameSettings,
         startGame,
+        setTicTacToeVariant,
+        submitPieceMove,
         submitWord,
         submitGuess,
         submitMove,

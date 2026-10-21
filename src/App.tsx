@@ -8,9 +8,10 @@ import { FinishedView } from './components/FinishedView';
 import { FriendshipQuizView } from './components/FriendshipQuizView';
 import { PwaNotificationBanner } from './components/PwaNotificationBanner';
 import { sanitizeRoomCode } from './lib/roomCode';
+import { useHistoryLayer } from './hooks/useHistoryLayer';
 
 function MainContent() {
-  const { session, loading } = useGame();
+  const { session, loading, localPlayer, leaveGame, resetGame } = useGame();
 
   const [initialRoomCode, setInitialRoomCode] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
@@ -87,7 +88,7 @@ function MainContent() {
       params.delete('view');
       const qs = params.toString();
       const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
+      window.history.replaceState(window.history.state, '', newUrl);
     }
   };
 
@@ -96,6 +97,40 @@ function MainContent() {
     setInitialQuizView(view || (code ? 'play' : 'create'));
     setIsFriendshipQuizOpen(true);
   };
+
+  // Hardware / gesture Back navigation: every deeper screen holds a history
+  // entry so Back steps Game -> Lobby -> Home Hub (never exits the PWA).
+  useHistoryLayer(isFriendshipQuizOpen, () => {
+    handleReturnToHub();
+  });
+
+  const hasSession = Boolean(session);
+  const sessionStatus = session?.status;
+  const isHostPlayer = Boolean(localPlayer?.isHost);
+
+  // Layer 1: inside a room (lobby). Back leaves the room -> Home Hub.
+  useHistoryLayer(hasSession, () => {
+    leaveGame();
+  });
+
+  // Layer 2: an active / finished game on top of the lobby.
+  useHistoryLayer(sessionStatus === 'playing' || sessionStatus === 'finished', () => {
+    if (sessionStatus === 'finished') {
+      void resetGame();
+      return;
+    }
+    if (isHostPlayer) {
+      if (typeof window !== 'undefined' && !window.confirm('End this game for everyone and return to the lobby?')) {
+        return false;
+      }
+      void resetGame();
+      return;
+    }
+    if (typeof window !== 'undefined' && !window.confirm('Leave this game and return to the Home Hub?')) {
+      return false;
+    }
+    leaveGame();
+  });
 
   if (loading) {
     return (
@@ -147,7 +182,7 @@ function MainContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#eef4fa] text-slate-800 flex flex-col selection:bg-[#3b4cca] selection:text-white relative overflow-x-hidden">
+    <div className="h-dvh bg-transparent text-slate-800 flex flex-col selection:bg-[#3b4cca] selection:text-white relative overflow-hidden">
       <Navbar
         onGoHome={handleReturnToHub}
         onOpenQuiz={(code, view) => handleOpenQuiz(code, view)}
@@ -156,18 +191,9 @@ function MainContent() {
 
       <PwaNotificationBanner />
 
-      <main className="relative z-10 flex-1 flex flex-col justify-start max-w-4xl w-full mx-auto pb-12">
+      <main className="relative z-10 flex-1 min-h-0 flex flex-col justify-start max-w-4xl w-full mx-auto overflow-y-auto no-scrollbar pb-2">
         {renderView()}
       </main>
-
-      <footer className="relative z-10 py-6 border-t border-slate-200 bg-white/70 backdrop-blur-xs text-center text-xs text-slate-500 space-y-1">
-        <p className="font-semibold text-slate-700">
-          PartyHub • Word Chain • Would You Rather • Friendship Quiz • Tic Tac Toe • Trivia • Higher or Lower • Most Likely
-        </p>
-        <p className="text-[11px] text-slate-400">
-          Designed for instant daylight mobile &amp; desktop play • Powered by React &amp; Supabase
-        </p>
-      </footer>
     </div>
   );
 }

@@ -38,7 +38,26 @@ const {
   checkTicTacToeWin,
   getBestBotMove,
   WIN_LINES,
+  HOME_LINES,
+  TACTICAL_MOVE_CAP,
+  getInitialBoard,
+  getAdjacentCells,
+  getLegalDestinations,
+  getLegalPieceMoves,
+  isLegalPieceMove,
+  applyPieceMove,
+  checkTacticalWin,
+  evaluateBoard,
+  getBestTacticalMove,
 } = await jiti.import('../src/lib/ticTacToe.ts');
+
+const {
+  SOLO_STARTABLE_GAMES,
+  getMinPlayersToStart,
+  canStartLobby,
+} = await jiti.import('../src/lib/lobbyRules.ts');
+
+const historyNav = await jiti.import('../src/lib/historyNav.ts');
 
 const { soundManager } = await jiti.import('../src/lib/audio.ts');
 
@@ -867,4 +886,248 @@ test('Mobile Option Card Text Truncation Prevention & Responsive Bubbles', () =>
     quizSource.includes('w-20 h-20 sm:w-28 sm:h-28'),
     'Portrait container must use compact mobile size w-20 h-20 sm:w-28 sm:h-28'
   );
+});
+
+test('Tactical Tic-Tac-Toe - Pre-placed starting board and home rows', () => {
+  assert.deepEqual(getInitialBoard('tactical'), ['X', 'X', 'X', null, null, null, 'O', 'O', 'O']);
+  assert.deepEqual(getInitialBoard('classic'), Array(9).fill(null));
+  assert.equal(getInitialBoard('tactical').filter((c) => c === 'X').length, 3);
+  assert.equal(getInitialBoard('tactical').filter((c) => c === 'O').length, 3);
+  assert.deepEqual(HOME_LINES.X, [0, 1, 2]);
+  assert.deepEqual(HOME_LINES.O, [6, 7, 8]);
+
+  // The pre-placed home rows are NOT a win at the start of the game
+  const start = getInitialBoard('tactical');
+  assert.deepEqual(checkTacticalWin(start), { winner: null, winningLine: null, isDraw: false });
+  assert.deepEqual(evaluateBoard(start, 'tactical', { moveCount: 0, toMove: 'X' }), {
+    winner: null,
+    winningLine: null,
+    isDraw: false,
+  });
+});
+
+test('Tactical Tic-Tac-Toe - Piece selection and movement rules', () => {
+  const start = getInitialBoard('tactical');
+
+  // Adjacency (8-neighbourhood)
+  assert.deepEqual(getAdjacentCells(0).sort(), [1, 3, 4]);
+  assert.deepEqual(getAdjacentCells(4).sort(), [0, 1, 2, 3, 5, 6, 7, 8]);
+
+  // Adjacent rule: X corner piece can only step into touching empty squares
+  assert.deepEqual(getLegalDestinations(start, 0, 'adjacent').sort(), [3, 4]);
+  assert.deepEqual(getLegalDestinations(start, 1, 'adjacent').sort(), [3, 4, 5]);
+  // Anywhere rule: every empty square
+  assert.deepEqual(getLegalDestinations(start, 0, 'anywhere').sort(), [3, 4, 5]);
+  // Empty squares / occupied destinations give nothing
+  assert.deepEqual(getLegalDestinations(start, 4, 'adjacent'), []);
+  assert.deepEqual(getLegalDestinations(start, 6, 'adjacent').sort(), [3, 4]);
+
+  // All legal moves for X at the start: 2 + 3 + 2 = 7
+  assert.equal(getLegalPieceMoves(start, 'X', 'adjacent').length, 7);
+  assert.equal(getLegalPieceMoves(start, 'O', 'adjacent').length, 7);
+
+  // Validation
+  assert.equal(isLegalPieceMove(start, 'X', { from: 0, to: 4 }), true);
+  assert.equal(isLegalPieceMove(start, 'X', { from: 0, to: 5 }, 'adjacent'), false);
+  assert.equal(isLegalPieceMove(start, 'X', { from: 0, to: 5 }, 'anywhere'), true);
+  assert.equal(isLegalPieceMove(start, 'X', { from: 6, to: 3 }), false, 'cannot move opponent piece');
+  assert.equal(isLegalPieceMove(start, 'X', { from: 0, to: 1 }), false, 'cannot move onto occupied square');
+
+  // Applying a move relocates the piece and never mutates the input
+  const moved = applyPieceMove(start, { from: 0, to: 4 });
+  assert.deepEqual(moved, [null, 'X', 'X', null, 'X', null, 'O', 'O', 'O']);
+  assert.deepEqual(start, ['X', 'X', 'X', null, null, null, 'O', 'O', 'O']);
+});
+
+test('Tactical Tic-Tac-Toe - Win detection excludes own home row', () => {
+  // X rebuilds on the middle row
+  assert.deepEqual(checkTacticalWin([null, null, null, 'X', 'X', 'X', 'O', 'O', 'O']), {
+    winner: 'X',
+    winningLine: [3, 4, 5],
+    isDraw: false,
+  });
+  // O aligned on the middle row
+  assert.equal(checkTacticalWin(['X', 'X', 'X', 'O', 'O', 'O', null, null, null]).winner, 'O');
+  // O's own home row never counts for O, X's never counts for X
+  assert.equal(checkTacticalWin(['X', 'X', 'X', null, null, null, 'O', 'O', 'O']).winner, null);
+  // ...but occupying the OPPONENT's home row does win
+  assert.equal(checkTacticalWin([null, null, null, null, null, null, 'X', 'X', 'X']).winner, 'X');
+  assert.equal(checkTacticalWin(['O', 'O', 'O', null, null, null, null, null, null]).winner, 'O');
+  // Column and diagonal wins
+  assert.equal(checkTacticalWin(['X', 'O', null, 'X', 'O', null, 'X', null, null]).winner, 'X');
+  assert.deepEqual(checkTacticalWin(['O', null, 'X', null, 'O', 'X', null, null, 'O']).winningLine, [0, 4, 8]);
+
+  // Stalemate: no legal move for the player to move -> draw
+  const blocked = ['X', 'O', 'X', 'O', 'X', 'O', 'O', 'X', 'O']; // no empty square -> no legal move
+  assert.equal(getLegalPieceMoves(blocked, 'X', 'adjacent').length, 0);
+  assert.equal(evaluateBoard(blocked, 'tactical', { moveCount: 3, toMove: 'X' }).isDraw, true);
+  // Move cap -> draw
+  assert.equal(
+    evaluateBoard(getInitialBoard('tactical'), 'tactical', { moveCount: TACTICAL_MOVE_CAP, toMove: 'X' }).isDraw,
+    true
+  );
+  // Classic variant keeps classic rules (full-row start would not exist there)
+  assert.equal(evaluateBoard(['X', 'X', 'X', null, null, null, null, null, null], 'classic').winner, 'X');
+});
+
+test('Tactical Tic-Tac-Toe - Bot plays pre-placed piece movement intelligently', () => {
+  // Immediate win: O slides 8 -> 5 to complete the middle row
+  const winBoard = ['X', 'X', 'X', 'O', 'O', null, null, null, 'O'];
+  assert.deepEqual(getBestTacticalMove(winBoard, 'O', 'adjacent'), { from: 8, to: 5 });
+
+  // Must block: X threatens 2 -> 5 completing [3,4,5]; only moving onto 5 stops it
+  const blockBoard = [null, null, 'X', 'X', 'X', null, 'O', 'O', 'O'];
+  for (let i = 0; i < 5; i++) {
+    const move = getBestTacticalMove(blockBoard, 'O', 'adjacent');
+    assert.ok(move, 'bot must have a move');
+    assert.equal(move.to, 5, `bot must block square 5, got ${JSON.stringify(move)}`);
+    assert.ok(isLegalPieceMove(blockBoard, 'O', move, 'adjacent'));
+  }
+
+  // From the opening position the bot always returns a legal move for itself
+  const start = getInitialBoard('tactical');
+  for (const rule of ['adjacent', 'anywhere']) {
+    const move = getBestTacticalMove(start, 'O', rule);
+    assert.ok(move && isLegalPieceMove(start, 'O', move, rule));
+  }
+
+  // No legal move -> null
+  assert.equal(getBestTacticalMove(['X', 'X', 'X', 'O', 'O', 'O', 'X', 'O', 'O'], 'X', 'adjacent'), null);
+});
+
+test('Lobby Solo Start - Trivia, Higher/Lower and Tic-Tac-Toe allow 1 player', () => {
+  assert.deepEqual([...SOLO_STARTABLE_GAMES].sort(), ['higher_lower', 'tic_tac_toe', 'trivia']);
+  assert.equal(getMinPlayersToStart('trivia'), 1);
+  assert.equal(getMinPlayersToStart('higher_lower'), 1);
+  assert.equal(getMinPlayersToStart('tic_tac_toe'), 1);
+  assert.equal(getMinPlayersToStart('word_chain'), 2);
+  assert.equal(getMinPlayersToStart('vote_reveal'), 2);
+  assert.equal(getMinPlayersToStart('most_likely'), 2);
+
+  assert.equal(canStartLobby('trivia', 1), true);
+  assert.equal(canStartLobby('higher_lower', 1), true);
+  assert.equal(canStartLobby('tic_tac_toe', 1), true, 'solo Tic-Tac-Toe launches the AI bot');
+  assert.equal(canStartLobby('word_chain', 1), false);
+  assert.equal(canStartLobby('vote_reveal', 1), false);
+  assert.equal(canStartLobby('word_chain', 2), true);
+  // 3+ Tic-Tac-Toe players need exactly 2 seats picked
+  assert.equal(canStartLobby('tic_tac_toe', 4, { selectedSeatCount: 1 }), false);
+  assert.equal(canStartLobby('tic_tac_toe', 4, { selectedSeatCount: 2 }), true);
+});
+
+test('History Navigation - Back button closes layers instead of exiting', () => {
+  // Minimal browser history mock: an entry stack + synchronous popstate on traversal
+  const entries = [{ state: null }];
+  let index = 0;
+  const listeners = [];
+  const fire = () => listeners.forEach((fn) => fn({}));
+  globalThis.window = {
+    location: { href: 'http://localhost/' },
+    history: {
+      get state() {
+        return entries[index].state;
+      },
+      pushState(state) {
+        entries.splice(index + 1);
+        entries.push({ state });
+        index += 1;
+      },
+      go(delta) {
+        index = Math.max(0, Math.min(entries.length - 1, index + delta));
+        fire();
+      },
+    },
+    addEventListener(type, fn) {
+      if (type === 'popstate') listeners.push(fn);
+    },
+  };
+  const hardwareBack = () => window.history.go(-1);
+
+  try {
+    historyNav.resetHistoryLayers();
+    const closed = [];
+
+    // Home Hub -> Lobby -> Game = 2 pushed entries
+    historyNav.openLayer('room', () => closed.push('room'));
+    historyNav.openLayer('game', () => closed.push('game'));
+    assert.deepEqual(historyNav.getOpenLayerIds(), ['room', 'game']);
+    assert.equal(entries.length, 3);
+    assert.equal(index, 2);
+
+    // Opening the same layer twice never pushes a duplicate entry
+    historyNav.openLayer('game', () => closed.push('game'));
+    assert.equal(entries.length, 3);
+
+    // Back #1: Game -> Lobby
+    hardwareBack();
+    assert.deepEqual(closed, ['game']);
+    assert.deepEqual(historyNav.getOpenLayerIds(), ['room']);
+
+    // Back #2: Lobby -> Home Hub (we are at the base entry; the app is still open)
+    hardwareBack();
+    assert.deepEqual(closed, ['game', 'room']);
+    assert.deepEqual(historyNav.getOpenLayerIds(), []);
+    assert.equal(index, 0);
+
+    // Veto: onClose returning false re-opens the layer (e.g. "Leave game?" -> Cancel)
+    let allow = false;
+    historyNav.openLayer('confirm', () => (allow ? undefined : false));
+    hardwareBack();
+    assert.deepEqual(historyNav.getOpenLayerIds(), ['confirm']);
+    assert.equal(index, 1, 'vetoed back keeps the user on the layer');
+    allow = true;
+    hardwareBack();
+    assert.deepEqual(historyNav.getOpenLayerIds(), []);
+
+    // Programmatic close (in-app X button) rewinds history without firing onClose
+    const fired = [];
+    historyNav.openLayer('modal', () => fired.push('modal'));
+    assert.equal(index, 1);
+    historyNav.closeLayer('modal');
+    assert.deepEqual(fired, []);
+    assert.deepEqual(historyNav.getOpenLayerIds(), []);
+    assert.equal(index, 0);
+
+    // Closing a lower layer also removes the layers stacked above it
+    historyNav.openLayer('a', () => {});
+    historyNav.openLayer('b', () => {});
+    historyNav.closeLayer('a');
+    assert.deepEqual(historyNav.getOpenLayerIds(), []);
+    assert.equal(index, 0);
+  } finally {
+    historyNav.resetHistoryLayers();
+    delete globalThis.window;
+  }
+});
+
+test('Native App Layout, Glass UI and Lobby Source Integrity', () => {
+  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const read = (...p) => fs.readFileSync(path.join(rootDir, ...p), 'utf8');
+
+  const app = read('src', 'App.tsx');
+  assert.equal(app.includes('<footer'), false, 'website-style footer must be removed');
+  assert.ok(app.includes('h-dvh'), 'App shell must fit the 100dvh viewport');
+  assert.ok(app.includes('useHistoryLayer'), 'App must register history layers for Back navigation');
+
+  const hub = read('src', 'components', 'RoomEntryView.tsx');
+  for (const label of ['Join Code', 'My Results', 'Games', 'Party', 'Fast Play', 'Duel']) {
+    assert.ok(hub.includes(label), `Home Hub must include "${label}"`);
+  }
+  assert.ok(hub.includes('useHistoryLayer'));
+  assert.ok(hub.includes('grid-cols-2'), 'Home Hub uses a 2-column bento grid');
+
+  const lobby = read('src', 'components', 'LobbyView.tsx');
+  assert.ok(lobby.includes('Change Game'), 'Lobby hides the game switcher behind a Change Game pill');
+  assert.ok(lobby.includes('canStartLobby'), 'Lobby start gating uses the shared solo-start rules');
+  assert.equal(lobby.includes('Need at least 2 players to start this game'), false);
+
+  const css = read('src', 'index.css');
+  assert.ok(css.includes('backdrop-filter: blur'), 'glassmorphism blur styles present');
+  assert.ok(css.includes('scale: 0.97'), 'springy tactile button press present');
+
+  // No ellipsis truncation on game option/answer cards
+  for (const file of ['TriviaGameView', 'HigherLowerGameView', 'MostLikelyGameView', 'VoteRevealGameView', 'LobbyView', 'RoomEntryView']) {
+    const src = read('src', 'components', `${file}.tsx`);
+    assert.equal(/\btruncate\b|line-clamp/.test(src), false, `${file} must not truncate text`);
+  }
 });

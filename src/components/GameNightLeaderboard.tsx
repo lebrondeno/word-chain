@@ -85,7 +85,7 @@ export const GameNightLeaderboard: React.FC<GameNightLeaderboardProps> = ({ isOp
                     {player.display_name.charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-bold text-[#0b2545] truncate">
+                    <div className="text-sm font-bold text-[#0b2545] break-words">
                       {player.display_name} {isMe ? '(You)' : ''}
                     </div>
                     {isTop && (

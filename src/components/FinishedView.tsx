@@ -234,7 +234,7 @@ export const FinishedView: React.FC = () => {
                   ) : (
                     <Scale className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                   )}
-                  <span className="font-bold text-[#0b2545] truncate">
+                  <span className="font-bold text-[#0b2545] break-words">
                     {g.player_name} guessed {g.guess.toUpperCase()}
                   </span>
                 </div>
