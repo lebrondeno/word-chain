@@ -3,6 +3,10 @@ import { useGame } from '../context/GameContext';
 import { CATEGORIES, validateWordSubmission } from '../data';
 import { WordHistoryDrawer } from './WordHistoryDrawer';
 import { VoteRevealGameView } from './VoteRevealGameView';
+import { MostLikelyGameView } from './MostLikelyGameView';
+import { TriviaGameView } from './TriviaGameView';
+import { HigherLowerGameView } from './HigherLowerGameView';
+import { TicTacToeGameView } from './TicTacToeGameView';
 import type { GameSession } from '../types/game';
 import {
   Clock,
@@ -361,9 +365,19 @@ export const GameView: React.FC = () => {
 
   if (!session) return null;
 
-  if (session.game_type === 'vote_reveal') {
-    return <VoteRevealGameView />;
+  switch (session.game_type) {
+    case 'vote_reveal':
+      return <VoteRevealGameView />;
+    case 'most_likely':
+      return <MostLikelyGameView />;
+    case 'trivia':
+      return <TriviaGameView />;
+    case 'higher_lower':
+      return <HigherLowerGameView />;
+    case 'tic_tac_toe':
+      return <TicTacToeGameView />;
+    case 'word_chain':
+    default:
+      return <WordChainGameView session={session} />;
   }
-
-  return <WordChainGameView session={session} />;
 };

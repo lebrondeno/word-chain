@@ -18,6 +18,7 @@ import {
 import { RulesModal } from './RulesModal';
 import { ShareModal } from './ShareModal';
 import { MyResultsModal } from './MyResultsModal';
+import { ALL_GAMES_COUNT } from '../data/prompts';
 import {
   subscribePwaState,
   promptPwaInstall,
@@ -101,7 +102,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   PartyHub
                 </span>
                 <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-200 border border-blue-400/20 hidden sm:inline-flex">
-                  3 Games
+                  {ALL_GAMES_COUNT} Games
                 </span>
               </div>
             </div>
@@ -126,15 +127,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
 
           {/* Right Action buttons */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             {/* Home Icon */}
             <button
               type="button"
               onClick={handleHomeClick}
               title="Return to Game Hub"
-              className="p-2 text-blue-100 hover:text-white rounded-xl hover:bg-white/10 transition"
+              className="p-1.5 sm:p-2 text-blue-100 hover:text-white rounded-xl hover:bg-white/10 transition"
             >
-              <Home className="w-5 h-5" />
+              <Home className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
             {/* Install App Button (hidden automatically once installed in standalone mode) */}
@@ -143,23 +144,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                 type="button"
                 onClick={handleInstallClick}
                 title="Install PartyHub App on your device"
-                className="px-2.5 py-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 transition flex items-center gap-1.5 text-xs font-bold active:scale-95"
+                className="px-2 sm:px-2.5 py-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 transition flex items-center gap-1 sm:gap-1.5 text-xs font-bold active:scale-95"
               >
                 <Download className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden sm:inline">Install App</span>
-                <span className="sm:hidden">Install</span>
+                <span className="hidden md:inline">Install App</span>
+                <span className="md:hidden hidden sm:inline">Install</span>
               </button>
             )}
 
-            {/* My Results Button (Replaces DB setup button) */}
+            {/* My Results Button */}
             <button
               type="button"
               onClick={() => setIsMyResultsOpen(true)}
               title="My Quizzes & Live Results"
-              className="px-2.5 py-1.5 rounded-xl border border-amber-400/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition flex items-center gap-1.5 text-xs font-bold"
+              className="px-2 sm:px-2.5 py-1.5 rounded-xl border border-amber-400/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition flex items-center gap-1 sm:gap-1.5 text-xs font-bold"
             >
               <Trophy className="w-4 h-4 text-amber-400" />
-              <span className="hidden sm:inline">My Results</span>
+              <span className="hidden md:inline">My Results</span>
             </button>
 
             {/* Rules Button */}
@@ -167,9 +168,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="button"
               onClick={() => setIsRulesOpen(true)}
               title="How to play"
-              className="p-2 text-blue-100 hover:text-white rounded-xl hover:bg-white/10 transition"
+              className="p-1.5 sm:p-2 text-blue-100 hover:text-white rounded-xl hover:bg-white/10 transition"
             >
-              <HelpCircle className="w-5 h-5" />
+              <HelpCircle className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
             {/* Sound Toggle */}
@@ -177,12 +178,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="button"
               onClick={handleToggleSound}
               title={isMuted ? 'Unmute audio' : 'Mute audio'}
-              className="p-2 text-blue-100 hover:text-white rounded-xl hover:bg-white/10 transition"
+              className="p-1.5 sm:p-2 text-blue-100 hover:text-white rounded-xl hover:bg-white/10 transition"
             >
               {isMuted ? (
-                <VolumeX className="w-5 h-5 text-slate-400" />
+                <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
               ) : (
-                <Volume2 className="w-5 h-5 text-emerald-400" />
+                <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
               )}
             </button>
 
@@ -191,9 +192,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 type="button"
                 onClick={leaveGame}
                 title="Leave room"
-                className="p-2 text-rose-300 hover:text-rose-200 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/30 rounded-xl transition"
+                className="p-1.5 sm:p-2 text-rose-300 hover:text-rose-200 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/30 rounded-xl transition"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             )}
           </div>

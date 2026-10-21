@@ -46,8 +46,10 @@ export const VoteRevealGameView: React.FC = () => {
     options: ['Always 10 minutes late', 'Always 20 minutes early'] as [string, string],
   };
 
-  const optionA = currentPrompt.options?.[0] || 'Option A';
-  const optionB = currentPrompt.options?.[1] || 'Option B';
+  const rawOptionA = currentPrompt.options?.[0];
+  const rawOptionB = currentPrompt.options?.[1];
+  const optionA: string = typeof rawOptionA === 'string' ? rawOptionA : (rawOptionA as { name?: string })?.name || 'Option A';
+  const optionB: string = typeof rawOptionB === 'string' ? rawOptionB : (rawOptionB as { name?: string })?.name || 'Option B';
 
   // Round votes
   const currentRoundVotes = votes.filter((v) => v.round_number === roundNumber);

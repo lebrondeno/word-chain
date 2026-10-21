@@ -22,9 +22,23 @@ const {
 
 const {
   GAME_TYPES,
+  ALL_GAMES_COUNT,
   VOTE_REVEAL_CATEGORIES,
+  MOST_LIKELY_CATEGORIES,
+  TRIVIA_CATEGORIES,
+  HIGHER_LOWER_CATEGORIES,
+  HIGHER_LOWER_DIFFICULTIES,
   SEED_PROMPTS,
+  SEED_MOST_LIKELY_PROMPTS,
+  SEED_TRIVIA_PROMPTS,
+  SEED_POPULATION_PROMPTS,
 } = await jiti.import('../src/data/prompts.ts');
+
+const {
+  checkTicTacToeWin,
+  getBestBotMove,
+  WIN_LINES,
+} = await jiti.import('../src/lib/ticTacToe.ts');
 
 const { soundManager } = await jiti.import('../src/lib/audio.ts');
 
@@ -669,4 +683,188 @@ test('Would You Rather - Full 58 Dilemmas Pool Integrity & Merging', () => {
 
   // 31 general prompts + 1 db prompt = 32
   assert.equal(mergedMap.size, 32);
+});
+
+test('Tic-Tac-Toe Game Engine Logic & Minimax Bot AI', () => {
+  assert.equal(WIN_LINES.length, 8, 'Tic-Tac-Toe must have 8 winning combinations');
+
+  // Rows win detection
+  const row0 = ['X', 'X', 'X', null, null, null, null, null, null];
+  assert.deepEqual(checkTicTacToeWin(row0), {
+    winner: 'X',
+    winningLine: [0, 1, 2],
+    isDraw: false,
+  });
+
+  const row1 = [null, null, null, 'O', 'O', 'O', null, null, null];
+  assert.deepEqual(checkTicTacToeWin(row1), {
+    winner: 'O',
+    winningLine: [3, 4, 5],
+    isDraw: false,
+  });
+
+  const row2 = [null, null, null, null, null, null, 'X', 'X', 'X'];
+  assert.deepEqual(checkTicTacToeWin(row2), {
+    winner: 'X',
+    winningLine: [6, 7, 8],
+    isDraw: false,
+  });
+
+  // Columns win detection
+  const col0 = ['X', null, null, 'X', null, null, 'X', null, null];
+  assert.deepEqual(checkTicTacToeWin(col0), {
+    winner: 'X',
+    winningLine: [0, 3, 6],
+    isDraw: false,
+  });
+
+  const col1 = [null, 'O', null, null, 'O', null, null, 'O', null];
+  assert.deepEqual(checkTicTacToeWin(col1), {
+    winner: 'O',
+    winningLine: [1, 4, 7],
+    isDraw: false,
+  });
+
+  const col2 = [null, null, 'X', null, null, 'X', null, null, 'X'];
+  assert.deepEqual(checkTicTacToeWin(col2), {
+    winner: 'X',
+    winningLine: [2, 5, 8],
+    isDraw: false,
+  });
+
+  // Diagonals win detection
+  const diag0 = ['O', null, null, null, 'O', null, null, null, 'O'];
+  assert.deepEqual(checkTicTacToeWin(diag0), {
+    winner: 'O',
+    winningLine: [0, 4, 8],
+    isDraw: false,
+  });
+
+  const diag1 = [null, null, 'X', null, 'X', null, 'X', null, null];
+  assert.deepEqual(checkTicTacToeWin(diag1), {
+    winner: 'X',
+    winningLine: [2, 4, 6],
+    isDraw: false,
+  });
+
+  // Incomplete board with no winner yet
+  const ongoing = ['X', 'O', 'X', null, null, null, null, null, null];
+  assert.deepEqual(checkTicTacToeWin(ongoing), {
+    winner: null,
+    winningLine: null,
+    isDraw: false,
+  });
+
+  // Draw board
+  const draw = ['X', 'O', 'X', 'X', 'O', 'O', 'O', 'X', 'X'];
+  assert.deepEqual(checkTicTacToeWin(draw), {
+    winner: null,
+    winningLine: null,
+    isDraw: true,
+  });
+
+  // Bot AI - Winning move prioritization
+  const canWinBoard = ['O', 'O', null, 'X', 'X', null, null, null, null];
+  assert.equal(getBestBotMove(canWinBoard), 2, 'Bot should immediately take winning index 2');
+
+  // Bot AI - Opponent block prioritization
+  const mustBlockBoard = ['X', 'X', null, null, 'O', null, null, null, null];
+  assert.equal(getBestBotMove(mustBlockBoard), 2, 'Bot should block opponent winning index 2');
+
+  // Bot AI - Center control
+  const centerOpenBoard = ['X', null, null, null, null, null, null, null, null];
+  assert.equal(getBestBotMove(centerOpenBoard), 4, 'Bot should prefer center index 4');
+
+  // Bot AI - Corner preference when center is occupied
+  const cornersOpenBoard = [null, null, null, null, 'X', null, null, null, null];
+  const botCornerMove = getBestBotMove(cornersOpenBoard);
+  assert.ok([0, 2, 6, 8].includes(botCornerMove), `Bot should pick a corner, got ${botCornerMove}`);
+
+  // Bot AI - Full board returns -1
+  assert.equal(getBestBotMove(draw), -1, 'Full board should return -1');
+});
+
+test('Recovered Game Modes & Hub Category Integrity', () => {
+  assert.equal(ALL_GAMES_COUNT, 7, 'Hub must announce exactly 7 games');
+  const expectedGameKeys = [
+    'word_chain',
+    'vote_reveal',
+    'friendship_test',
+    'tic_tac_toe',
+    'trivia',
+    'higher_lower',
+    'most_likely',
+  ];
+
+  for (const key of expectedGameKeys) {
+    assert.ok(GAME_TYPES[key], `GAME_TYPES must include ${key}`);
+    const g = GAME_TYPES[key];
+    assert.ok(g.id && g.name && g.shortName && g.description, `Game ${key} missing basic info`);
+    assert.ok(g.icon, `Game ${key} missing icon`);
+    assert.ok(Array.isArray(g.categories), `Game ${key} categories must be an array`);
+  }
+
+  // Category integrity
+  assert.ok(Object.keys(TRIVIA_CATEGORIES).includes('general_knowledge'));
+  assert.ok(Object.keys(TRIVIA_CATEGORIES).includes('sports'));
+  assert.ok(Object.keys(TRIVIA_CATEGORIES).includes('geography'));
+  assert.ok(Object.keys(TRIVIA_CATEGORIES).includes('animals'));
+  assert.ok(Object.keys(TRIVIA_CATEGORIES).includes('history'));
+
+  assert.ok(Object.keys(HIGHER_LOWER_CATEGORIES).includes('random_numbers'));
+  assert.ok(Object.keys(HIGHER_LOWER_CATEGORIES).includes('population'));
+
+  const difficultyIds = HIGHER_LOWER_DIFFICULTIES.map((d) => d.id);
+  assert.ok(difficultyIds.includes('easy'));
+  assert.ok(difficultyIds.includes('medium'));
+  assert.ok(difficultyIds.includes('hard'));
+
+  assert.ok(Object.keys(MOST_LIKELY_CATEGORIES).includes('general'));
+
+  // Seed prompt pools
+  assert.ok(SEED_TRIVIA_PROMPTS.length >= 6, 'Expected at least 6 trivia seed prompts');
+  assert.ok(SEED_POPULATION_PROMPTS.length >= 12, 'Expected at least 12 population seed prompts');
+  assert.ok(SEED_MOST_LIKELY_PROMPTS.length >= 8, 'Expected at least 8 most likely seed prompts');
+});
+
+test('Mobile Option Card Text Truncation Prevention & Responsive Bubbles', () => {
+  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const quizViewPath = path.join(rootDir, 'src', 'components', 'FriendshipQuizView.tsx');
+  assert.ok(fs.existsSync(quizViewPath), 'FriendshipQuizView.tsx must exist');
+
+  const quizSource = fs.readFileSync(quizViewPath, 'utf8');
+
+  // Verify no ellipsis truncation on option text
+  assert.equal(
+    quizSource.includes('line-clamp-1'),
+    false,
+    'FriendshipQuizView must not use line-clamp-1 on option cards'
+  );
+  assert.equal(
+    quizSource.includes('line-clamp-2'),
+    false,
+    'FriendshipQuizView must not use line-clamp-2 on option cards'
+  );
+
+  // Verify flexible bottom container height & responsive break-words
+  assert.ok(
+    quizSource.includes('min-h-[64px]'),
+    'Option cards must have flexible min-h-[64px] bottom banner'
+  );
+  assert.ok(
+    quizSource.includes('break-words'),
+    'Option cards text must have break-words to prevent overflow'
+  );
+
+  // Verify top progress bubbles wrap cleanly
+  assert.ok(
+    quizSource.includes('flex-wrap') && quizSource.includes('justify-center'),
+    'Progress bubbles must have flex-wrap and justify-center to prevent horizontal scrollbar or half-cut bubble on mobile'
+  );
+
+  // Verify responsive portrait container
+  assert.ok(
+    quizSource.includes('w-20 h-20 sm:w-28 sm:h-28'),
+    'Portrait container must use compact mobile size w-20 h-20 sm:w-28 sm:h-28'
+  );
 });

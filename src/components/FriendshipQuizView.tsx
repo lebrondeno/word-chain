@@ -573,7 +573,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
                         <div className={`font-bold text-xs ${isSelected ? 'text-[#0b2545]' : 'text-slate-800'}`}>
                           {pack.name}
                         </div>
-                        <div className="text-[11px] text-slate-500 line-clamp-1 leading-snug">
+                        <div className="text-[11px] text-slate-500 leading-snug break-words">
                           {pack.description}
                         </div>
                       </div>
@@ -646,8 +646,8 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             </div>
           </div>
 
-          {/* Top Progress Bubbles */}
-          <div className="flex items-center justify-start sm:justify-center gap-1.5 sm:gap-2 overflow-x-auto py-1 px-1">
+          {/* Top Progress Bubbles (Cleanly wrapped compact rows, no scrollbar or half-cut bubbles) */}
+          <div className="flex flex-wrap items-center justify-center gap-1.5 py-1 px-1">
             {builderQuestions.map((_, idx) => {
               const isCurrent = idx === currentBuilderIndex;
               const isPast = idx < currentBuilderIndex;
@@ -728,8 +728,8 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
                   )}
 
                   {/* White rounded upper body containing circular illustration framed by double gold ring */}
-                  <div className="w-full pt-4 pb-3 px-2 flex items-center justify-center bg-white flex-1">
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full p-[2px] border border-[#d4b483] bg-gradient-to-b from-[#faf6f0] to-[#f3ece0] flex items-center justify-center shadow-inner">
+                  <div className="w-full pt-3 pb-2 px-1 sm:pt-4 sm:pb-3 sm:px-2 flex items-center justify-center bg-white flex-1">
+                    <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-full p-[2px] border border-[#d4b483] bg-gradient-to-b from-[#faf6f0] to-[#f3ece0] flex items-center justify-center shadow-inner">
                       <div className="w-full h-full rounded-full border border-[#d4b483] overflow-hidden flex items-center justify-center bg-white shadow-xs">
                         <img
                           src={optImage}
@@ -741,13 +741,13 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Curved deep royal-navy bottom banner (#0b2545) with centered bold white text */}
+                  {/* Curved deep royal-navy bottom banner (#0b2545) with flexible height & full text visibility */}
                   <div
-                    className={`w-full py-2.5 sm:py-3 px-2 rounded-b-[22px] transition-colors flex items-center justify-center text-center ${
+                    className={`w-full min-h-[64px] h-auto flex-grow py-2.5 px-2.5 rounded-b-[22px] transition-colors flex items-center justify-center text-center ${
                       isSelected ? 'bg-[#1f9d55]' : 'bg-[#0b2545] group-hover:bg-[#13315c]'
                     }`}
                   >
-                    <span className="text-xs sm:text-sm font-bold text-white tracking-wide line-clamp-2 leading-tight">
+                    <span className="text-xs sm:text-sm font-bold text-white tracking-wide leading-snug break-words whitespace-normal">
                       {optText}
                     </span>
                   </div>
@@ -1086,8 +1086,8 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             </span>
           </div>
 
-          {/* Top Progress Bubbles */}
-          <div className="flex items-center justify-start sm:justify-center gap-1.5 sm:gap-2 overflow-x-auto py-1 px-1">
+          {/* Top Progress Bubbles (Cleanly wrapped compact rows, no scrollbar or half-cut bubbles) */}
+          <div className="flex flex-wrap items-center justify-center gap-1.5 py-1 px-1">
             {activeQuiz.questions.map((_, idx) => {
               const isCurrent = idx === playIndex;
               const isPast = idx < playIndex;
@@ -1167,8 +1167,8 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
                   )}
 
                   {/* White rounded upper body with double gold ring */}
-                  <div className="w-full pt-4 pb-3 px-2 flex items-center justify-center bg-white flex-1">
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full p-[2px] border border-[#d4b483] bg-gradient-to-b from-[#faf6f0] to-[#f3ece0] flex items-center justify-center shadow-inner">
+                  <div className="w-full pt-3 pb-2 px-1 sm:pt-4 sm:pb-3 sm:px-2 flex items-center justify-center bg-white flex-1">
+                    <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-full p-[2px] border border-[#d4b483] bg-gradient-to-b from-[#faf6f0] to-[#f3ece0] flex items-center justify-center shadow-inner">
                       <div className="w-full h-full rounded-full border border-[#d4b483] overflow-hidden flex items-center justify-center bg-white shadow-xs">
                         <img
                           src={optImage}
@@ -1180,11 +1180,11 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Curved deep royal-navy bottom banner (#0b2545) with white option text */}
+                  {/* Curved deep royal-navy bottom banner (#0b2545) with flexible height & full text visibility */}
                   <div
-                    className={`w-full py-2.5 sm:py-3 px-2 rounded-b-[22px] transition-colors flex items-center justify-center text-center ${bannerBg}`}
+                    className={`w-full min-h-[64px] h-auto flex-grow py-2.5 px-2.5 rounded-b-[22px] transition-colors flex items-center justify-center text-center ${bannerBg}`}
                   >
-                    <span className="text-xs sm:text-sm font-bold text-white tracking-wide line-clamp-2 leading-tight">
+                    <span className="text-xs sm:text-sm font-bold text-white tracking-wide leading-snug break-words whitespace-normal">
                       {optText}
                     </span>
                   </div>

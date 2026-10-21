@@ -1,18 +1,20 @@
 export interface PromptData {
   id: string;
-  engine: 'vote_reveal';
-  category: 'general' | 'couples';
+  engine: 'vote_reveal' | 'most_likely' | 'trivia' | 'higher_lower';
+  category: string;
   prompt_text: string;
-  options: [string, string];
+  options: [string, string] | string[] | null;
+  correct_answer?: string;
+  numeric_value?: number;
 }
 
 export interface GameTypeInfo {
-  id: 'word_chain' | 'vote_reveal';
+  id: 'word_chain' | 'vote_reveal' | 'friendship_test' | 'tic_tac_toe' | 'trivia' | 'higher_lower' | 'most_likely';
   name: string;
   shortName: string;
   icon: string;
   description: string;
-  categories: { id: string; name: string; icon: string; description: string }[];
+  categories: { id: string; name: string; icon: string; description: string; hasDifficulty?: boolean }[];
 }
 
 export const VOTE_REVEAL_CATEGORIES: Record<string, { id: string; name: string; icon: string; description: string }> = {
@@ -28,7 +30,101 @@ export const VOTE_REVEAL_CATEGORIES: Record<string, { id: string; name: string; 
     icon: '❤️',
     description: 'Playful relationship & lifestyle scenarios',
   },
+  majority_rules: {
+    id: 'majority_rules',
+    name: 'Majority Rules',
+    icon: '🙋',
+    description: 'Binary funny & opinion questions',
+  },
+  boys_debate: {
+    id: 'boys_debate',
+    name: "Boys' Debate",
+    icon: '🗣️',
+    description: 'Funny controversial yes/no takes',
+  },
+  church_banter: {
+    id: 'church_banter',
+    name: 'Church Banter',
+    icon: '⛪',
+    description: 'Fellowship, worship & church-life scenarios',
+  },
+  boys_banter: {
+    id: 'boys_banter',
+    name: "Boys' Banter",
+    icon: '🎮',
+    description: 'Sports, gaming & guy-talk dilemmas',
+  },
 };
+
+export const MOST_LIKELY_CATEGORIES: Record<string, { id: string; name: string; icon: string; description: string }> = {
+  general: {
+    id: 'general',
+    name: 'General',
+    icon: '👀',
+    description: "Classic who's-most-likely prompts for any group",
+  },
+};
+
+export const TRIVIA_CATEGORIES: Record<string, { id: string; name: string; icon: string; description: string }> = {
+  general_knowledge: {
+    id: 'general_knowledge',
+    name: 'General Knowledge',
+    icon: '🧠',
+    description: 'A little bit of everything',
+  },
+  sports: {
+    id: 'sports',
+    name: 'Sports',
+    icon: '⚽',
+    description: 'Athletes, teams & sporting moments',
+  },
+  geography: {
+    id: 'geography',
+    name: 'Geography',
+    icon: '🌍',
+    description: 'Countries, capitals & landmarks',
+  },
+  animals: {
+    id: 'animals',
+    name: 'Animals',
+    icon: '🦁',
+    description: 'Wildlife, pets & the animal kingdom',
+  },
+  history: {
+    id: 'history',
+    name: 'History',
+    icon: '📜',
+    description: 'Events, eras & historical figures',
+  },
+};
+
+export const HIGHER_LOWER_CATEGORIES: Record<
+  string,
+  { id: string; name: string; icon: string; description: string; hasDifficulty?: boolean }
+> = {
+  random_numbers: {
+    id: 'random_numbers',
+    name: 'Random Numbers',
+    icon: '🔢',
+    description: 'Procedurally generated - choose your difficulty',
+    hasDifficulty: true,
+  },
+  population: {
+    id: 'population',
+    name: 'World Populations',
+    icon: '🌆',
+    description: 'City & country population figures',
+  },
+};
+
+export const HIGHER_LOWER_DIFFICULTIES: { id: string; name: string; description: string }[] = [
+  { id: 'easy', name: 'Easy', description: 'Big gaps between numbers' },
+  { id: 'medium', name: 'Medium', description: 'Moderate gaps' },
+  { id: 'hard', name: 'Hard', description: 'Numbers often close' },
+  { id: 'expert', name: 'Expert', description: 'Razor-thin margins' },
+];
+
+export const ALL_GAMES_COUNT = 7;
 
 export const GAME_TYPES: Record<string, GameTypeInfo> = {
   word_chain: {
@@ -54,6 +150,63 @@ export const GAME_TYPES: Record<string, GameTypeInfo> = {
     categories: [
       { id: 'general', name: 'General Fun', icon: '🎲', description: 'Quirky & classic dilemmas' },
       { id: 'couples', name: 'Couples & Dates', icon: '❤️', description: 'Relationship scenarios' },
+      { id: 'majority_rules', name: 'Majority Rules', icon: '🙋', description: 'Binary funny & opinion questions' },
+      { id: 'boys_debate', name: "Boys' Debate", icon: '🗣️', description: 'Funny controversial yes/no takes' },
+      { id: 'church_banter', name: 'Church Banter', icon: '⛪', description: 'Fellowship & church-life scenarios' },
+      { id: 'boys_banter', name: "Boys' Banter", icon: '🎮', description: 'Sports, gaming & guy-talk dilemmas' },
+    ],
+  },
+  friendship_test: {
+    id: 'friendship_test',
+    name: 'Friendship Test',
+    shortName: 'Friend Quiz',
+    icon: '🤝',
+    description: 'Personalized "Know Me Better" quiz with viral WhatsApp leaderboard',
+    categories: [
+      { id: 'classic', name: 'Classic Besties', icon: '✨', description: '10 to 20 illustrated questions' },
+    ],
+  },
+  tic_tac_toe: {
+    id: 'tic_tac_toe',
+    name: 'Tic Tac Toe',
+    shortName: 'Tic Tac Toe',
+    icon: '⭕',
+    description: 'Classic 2-player grid strategy with multiplayer and local pass & play / AI bot mode',
+    categories: [],
+  },
+  trivia: {
+    id: 'trivia',
+    name: '20-Second Challenge',
+    shortName: 'Trivia',
+    icon: '⚡',
+    description: 'Answer fast — you only get 20 seconds per multiple-choice question',
+    categories: [
+      { id: 'general_knowledge', name: 'General Knowledge', icon: '🧠', description: 'A little bit of everything' },
+      { id: 'sports', name: 'Sports', icon: '⚽', description: 'Athletes, teams & sporting moments' },
+      { id: 'geography', name: 'Geography', icon: '🌍', description: 'Countries, capitals & landmarks' },
+      { id: 'animals', name: 'Animals', icon: '🦁', description: 'Wildlife, pets & the animal kingdom' },
+      { id: 'history', name: 'History', icon: '📜', description: 'Events, eras & historical figures' },
+    ],
+  },
+  higher_lower: {
+    id: 'higher_lower',
+    name: 'Higher or Lower',
+    shortName: 'Higher/Lower',
+    icon: '📈',
+    description: 'Guess if the next number or population is higher or lower — one miss and you are out',
+    categories: [
+      { id: 'random_numbers', name: 'Random Numbers', icon: '🔢', description: 'Procedurally generated with difficulty', hasDifficulty: true },
+      { id: 'population', name: 'World Populations', icon: '🌆', description: 'City & country population stats' },
+    ],
+  },
+  most_likely: {
+    id: 'most_likely',
+    name: "Who's Most Likely",
+    shortName: 'Most Likely',
+    icon: '👀',
+    description: 'Vote for the friend in the room who best fits each prompt',
+    categories: [
+      { id: 'general', name: 'General', icon: '👀', description: "Classic who's-most-likely prompts" },
     ],
   },
 };
@@ -469,3 +622,132 @@ export const SEED_PROMPTS: PromptData[] = [
     options: ["3 hours daily video games", "Addicted to shopping hauls"],
   },
 ];
+
+// Fallback seed prompts for "Who's Most Likely"
+export const SEED_MOST_LIKELY_PROMPTS: PromptData[] = [
+  {
+    id: 'ml-001',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to become famous one day?",
+    options: null,
+  },
+  {
+    id: 'ml-002',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to sleep through an important meeting or event?",
+    options: null,
+  },
+  {
+    id: 'ml-003',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to disappear from the group chat for months and reappear like nothing happened?",
+    options: null,
+  },
+  {
+    id: 'ml-004',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to win an argument just by being stubborn, not by being right?",
+    options: null,
+  },
+  {
+    id: 'ml-005',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to still be awake at 3am for no real reason?",
+    options: null,
+  },
+  {
+    id: 'ml-006',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to accidentally send a screenshot to the person they screenshotted?",
+    options: null,
+  },
+  {
+    id: 'ml-007',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to survive a zombie apocalypse through sheer luck?",
+    options: null,
+  },
+  {
+    id: 'ml-008',
+    engine: 'most_likely',
+    category: 'general',
+    prompt_text: "Who's most likely to impulse buy something completely ridiculous?",
+    options: null,
+  },
+];
+
+// Fallback seed prompts for "20-Second Challenge" (Trivia)
+export const SEED_TRIVIA_PROMPTS: PromptData[] = [
+  {
+    id: 'tr-001',
+    engine: 'trivia',
+    category: 'general_knowledge',
+    prompt_text: 'What is the rarest blood type in humans?',
+    options: ['AB-Negative', 'O-Positive', 'B-Negative', 'A-Negative'],
+    correct_answer: 'AB-Negative',
+  },
+  {
+    id: 'tr-002',
+    engine: 'trivia',
+    category: 'general_knowledge',
+    prompt_text: 'Which planet is known as the Morning Star?',
+    options: ['Venus', 'Mars', 'Jupiter', 'Mercury'],
+    correct_answer: 'Venus',
+  },
+  {
+    id: 'tr-003',
+    engine: 'trivia',
+    category: 'sports',
+    prompt_text: 'How many players are on the field for one team in baseball?',
+    options: ['9', '11', '7', '10'],
+    correct_answer: '9',
+  },
+  {
+    id: 'tr-004',
+    engine: 'trivia',
+    category: 'geography',
+    prompt_text: 'What is the capital city of Australia?',
+    options: ['Canberra', 'Sydney', 'Melbourne', 'Brisbane'],
+    correct_answer: 'Canberra',
+  },
+  {
+    id: 'tr-005',
+    engine: 'trivia',
+    category: 'animals',
+    prompt_text: 'What is the only mammal capable of true sustained flight?',
+    options: ['Bat', 'Flying Squirrel', 'Sugar Glider', 'Colugo'],
+    correct_answer: 'Bat',
+  },
+  {
+    id: 'tr-006',
+    engine: 'trivia',
+    category: 'history',
+    prompt_text: 'In what year did the Apollo 11 moon landing take place?',
+    options: ['1969', '1965', '1971', '1973'],
+    correct_answer: '1969',
+  },
+];
+
+// Fallback seed data for "World Populations" Higher or Lower
+export const SEED_POPULATION_PROMPTS: { id: string; label: string; value: number }[] = [
+  { id: 'pop-1', label: 'Tokyo, Japan', value: 37400000 },
+  { id: 'pop-2', label: 'Delhi, India', value: 30290000 },
+  { id: 'pop-3', label: 'Shanghai, China', value: 27050000 },
+  { id: 'pop-4', label: 'São Paulo, Brazil', value: 22040000 },
+  { id: 'pop-5', label: 'Mexico City, Mexico', value: 21780000 },
+  { id: 'pop-6', label: 'Cairo, Egypt', value: 20900000 },
+  { id: 'pop-7', label: 'Dhaka, Bangladesh', value: 21000000 },
+  { id: 'pop-8', label: 'Mumbai, India', value: 20410000 },
+  { id: 'pop-9', label: 'New York City, USA', value: 18800000 },
+  { id: 'pop-10', label: 'London, UK', value: 9000000 },
+  { id: 'pop-11', label: 'Paris, France', value: 2140000 },
+  { id: 'pop-12', label: 'Sydney, Australia', value: 5312000 },
+];
+

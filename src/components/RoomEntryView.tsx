@@ -1,9 +1,16 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { CATEGORIES } from '../data';
-import { VOTE_REVEAL_CATEGORIES } from '../data/prompts';
+import {
+  VOTE_REVEAL_CATEGORIES,
+  MOST_LIKELY_CATEGORIES,
+  TRIVIA_CATEGORIES,
+  HIGHER_LOWER_CATEGORIES,
+  ALL_GAMES_COUNT,
+} from '../data/prompts';
 import { sanitizeRoomCode } from '../lib/roomCode';
 import { getMySavedQuizzes, type UserSavedQuiz } from '../lib/savedQuizzes';
+import { TicTacToeGameView } from './TicTacToeGameView';
 import {
   Play,
   Sparkles,
@@ -12,12 +19,21 @@ import {
   Trophy,
   Copy,
   Check,
+  Bot,
 } from 'lucide-react';
 
 interface RoomEntryViewProps {
   initialRoomCode?: string;
   onOpenFriendshipQuiz?: (code?: string, view?: 'results' | 'play') => void;
 }
+
+export type MultiplayerGameType =
+  | 'word_chain'
+  | 'vote_reveal'
+  | 'tic_tac_toe'
+  | 'trivia'
+  | 'higher_lower'
+  | 'most_likely';
 
 export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
   initialRoomCode,
@@ -26,7 +42,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
   const { createGame, joinGame, loading, error, setError } = useGame();
 
   const [activeTab, setActiveTab] = useState<'hub' | 'create_room' | 'join'>('hub');
-  const [selectedGameType, setSelectedGameType] = useState<'word_chain' | 'vote_reveal'>('word_chain');
+  const [selectedGameType, setSelectedGameType] = useState<MultiplayerGameType>('word_chain');
   const [category, setCategory] = useState<string>('cities');
   const [displayName, setDisplayName] = useState(() => {
     return typeof window !== 'undefined' ? localStorage.getItem('word_chain_saved_name') || '' : '';
@@ -34,6 +50,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
   const [inputCode, setInputCode] = useState(() => (initialRoomCode ? sanitizeRoomCode(initialRoomCode) : ''));
   const [savedQuizzes] = useState<UserSavedQuiz[]>(() => getMySavedQuizzes());
   const [copiedQuizCode, setCopiedQuizCode] = useState<string | null>(null);
+  const [isLocalTicTacToeOpen, setIsLocalTicTacToeOpen] = useState(false);
 
   const handleCopyQuizLink = (code: string) => {
     if (typeof window === 'undefined') return;
@@ -50,10 +67,16 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
     }
   };
 
-  const handleSelectGameToCreate = (gameType: 'word_chain' | 'vote_reveal') => {
+  const handleSelectGameToCreate = (gameType: MultiplayerGameType) => {
     setSelectedGameType(gameType);
-    if (gameType === 'vote_reveal') {
+    if (gameType === 'vote_reveal' || gameType === 'most_likely') {
       setCategory('general');
+    } else if (gameType === 'trivia') {
+      setCategory('general_knowledge');
+    } else if (gameType === 'higher_lower') {
+      setCategory('random_numbers');
+    } else if (gameType === 'tic_tac_toe') {
+      setCategory('classic');
     } else {
       setCategory('cities');
     }
@@ -93,8 +116,17 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
     await joinGame(clean, displayName.trim());
   };
 
+  // If local Tic-Tac-Toe mode is currently open from Home Hub
+  if (isLocalTicTacToeOpen) {
+    return (
+      <div className="w-full max-w-lg mx-auto px-4 py-6">
+        <TicTacToeGameView forceLocal onExitLocal={() => setIsLocalTicTacToeOpen(false)} />
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-6 sm:py-10 space-y-8 animate-fade-in text-slate-800">
+    <div className="w-full max-w-5xl mx-auto px-4 py-6 sm:py-10 space-y-8 animate-fade-in text-slate-800">
       {/* 1. Header Hero Banner */}
       <div className="text-center space-y-3 max-w-2xl mx-auto">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-blue-200/80 text-[#3b4cca] text-xs font-bold shadow-2xs">
@@ -117,7 +149,6 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
       {/* 2. Universal "Join Room or Quiz Code" Bar with thumbnail icon */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-200 max-w-2xl mx-auto">
         <form onSubmit={handleQuickJoin} className="flex flex-col sm:flex-row items-center gap-3">
-          {/* Small Thumbnail Icon */}
           <div className="flex items-center gap-2.5 w-full sm:w-auto">
             <div className="w-10 h-10 rounded-2xl bg-[#eef4fa] border border-slate-200 flex items-center justify-center shrink-0 shadow-2xs">
               <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="#0b2545" strokeWidth="2">
@@ -128,7 +159,6 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
             <div className="sm:hidden text-xs font-bold text-[#0b2545]">Join by Code:</div>
           </div>
 
-          {/* Code Input */}
           <div className="relative flex-1 w-full">
             <input
               type="text"
@@ -140,7 +170,6 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
             />
           </div>
 
-          {/* Join Button */}
           <button
             type="submit"
             className="w-full sm:w-auto px-6 py-2.5 sm:py-3 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-1.5 shrink-0 active:scale-[0.98]"
@@ -160,45 +189,38 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
 
       {/* 3. Main View Switching (Game Hub vs Create Room vs Join Form) */}
       {activeTab === 'hub' ? (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="flex items-center justify-between px-1">
             <h2 className="text-lg sm:text-xl font-black text-[#0b2545] flex items-center gap-2">
               <span>Choose a Game Mode</span>
             </h2>
-            <span className="text-xs font-bold text-slate-400">3 Games Available</span>
+            <span className="text-xs font-bold text-[#3b4cca] bg-blue-50 px-3 py-1 rounded-full border border-blue-200/60">
+              {ALL_GAMES_COUNT} Games Available
+            </span>
           </div>
 
-          {/* 3 Interactive Game Mode Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Interactive Game Cards Grid (All 7 Games) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* ---------------- CARD 1: WORD CHAIN ---------------- */}
             <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between group">
-              {/* Custom Inline SVG Banner Artwork: Letter tiles, chain links, 30s stopwatch */}
               <div className="w-full h-40 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100/80 p-3 relative overflow-hidden flex items-center justify-center mb-4">
                 <svg viewBox="0 0 280 140" className="w-full h-full">
                   <defs>
                     <linearGradient id="tileW" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stop-color="#3b4cca" />
-                      <stop offset="100%" stop-color="#1e2a78" />
+                      <stop offset="0%" stopColor="#3b4cca" />
+                      <stop offset="100%" stopColor="#1e2a78" />
                     </linearGradient>
                     <linearGradient id="tileO" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stop-color="#1f9d55" />
-                      <stop offset="100%" stop-color="#0b6e27" />
+                      <stop offset="0%" stopColor="#1f9d55" />
+                      <stop offset="100%" stopColor="#0b6e27" />
                     </linearGradient>
                   </defs>
-
-                  {/* Interlocking Letter Tiles */}
                   <rect x="25" y="35" width="58" height="58" rx="14" fill="url(#tileW)" filter="drop-shadow(0 4px 6px rgba(59,76,202,0.3))" />
                   <text x="54" y="75" fill="#ffffff" fontSize="34" fontWeight="900" textAnchor="middle" fontFamily="system-ui, sans-serif">W</text>
-
-                  {/* Glowing Chain Links */}
                   <rect x="75" y="55" width="34" height="18" rx="9" fill="none" stroke="#fbbf24" strokeWidth="5" />
                   <rect x="97" y="55" width="34" height="18" rx="9" fill="none" stroke="#60a5fa" strokeWidth="5" />
-
-                  {/* Second Tile */}
                   <rect x="122" y="35" width="58" height="58" rx="14" fill="url(#tileO)" filter="drop-shadow(0 4px 6px rgba(31,157,85,0.3))" />
                   <text x="151" y="75" fill="#ffffff" fontSize="34" fontWeight="900" textAnchor="middle" fontFamily="system-ui, sans-serif">C</text>
-
-                  {/* 30s Stopwatch Illustration */}
                   <g transform="translate(200, 30)">
                     <circle cx="35" cy="38" r="28" fill="#ffffff" stroke="#f59e0b" strokeWidth="4.5" />
                     <rect x="31" y="4" width="8" height="8" rx="2" fill="#d97706" />
@@ -216,7 +238,6 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                   </span>
                   <span className="text-xs font-bold text-slate-500">2-8 Players</span>
                 </div>
-
                 <h3 className="text-xl font-black text-[#0b2545]">Word Chain</h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   Pass the letter, hold the chain! Link words by their final letter against the ticking <strong>30-second stopwatch</strong>.
@@ -237,30 +258,23 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
 
             {/* ---------------- CARD 2: WOULD YOU RATHER ---------------- */}
             <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between group">
-              {/* Custom Inline SVG Banner Artwork: Split electric-blue vs crimson-coral cards with lightning divider */}
               <div className="w-full h-40 rounded-2xl bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 border border-slate-200/80 p-3 relative overflow-hidden flex items-center justify-center mb-4">
                 <svg viewBox="0 0 280 140" className="w-full h-full">
                   <defs>
                     <linearGradient id="splitBlue" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stop-color="#3b82f6" />
-                      <stop offset="100%" stop-color="#1d4ed8" />
+                      <stop offset="0%" stopColor="#3b82f6" />
+                      <stop offset="100%" stopColor="#1d4ed8" />
                     </linearGradient>
                     <linearGradient id="splitCoral" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stop-color="#f43f5e" />
-                      <stop offset="100%" stop-color="#be123c" />
+                      <stop offset="0%" stopColor="#f43f5e" />
+                      <stop offset="100%" stopColor="#be123c" />
                     </linearGradient>
                   </defs>
-
-                  {/* Split Electric-Blue Choice Card */}
                   <rect x="18" y="25" width="105" height="85" rx="16" fill="url(#splitBlue)" filter="drop-shadow(0 4px 6px rgba(59,130,246,0.3))" />
                   <text x="70" y="58" fill="#ffffff" fontSize="16" fontWeight="900" textAnchor="middle" fontFamily="system-ui, sans-serif">OPTION A</text>
                   <text x="70" y="80" fill="#dbeafe" fontSize="11" fontWeight="700" textAnchor="middle" fontFamily="system-ui, sans-serif">Unlimited Food</text>
-
-                  {/* Central Lightning Bolt Divider */}
                   <circle cx="140" cy="67" r="22" fill="#ffffff" stroke="#f59e0b" strokeWidth="3" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.15))" />
                   <polygon points="141,50 132,68 140,68 139,84 149,65 140,65" fill="#f59e0b" />
-
-                  {/* Split Crimson-Coral Choice Card */}
                   <rect x="157" y="25" width="105" height="85" rx="16" fill="url(#splitCoral)" filter="drop-shadow(0 4px 6px rgba(244,63,94,0.3))" />
                   <text x="210" y="58" fill="#ffffff" fontSize="16" fontWeight="900" textAnchor="middle" fontFamily="system-ui, sans-serif">OPTION B</text>
                   <text x="210" y="80" fill="#ffe4e6" fontSize="11" fontWeight="700" textAnchor="middle" fontFamily="system-ui, sans-serif">Free Flights</text>
@@ -274,7 +288,6 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                   </span>
                   <span className="text-xs font-bold text-slate-500">2-12 Players</span>
                 </div>
-
                 <h3 className="text-xl font-black text-[#0b2545]">Would You Rather</h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   Vote privately on tough dilemmas within 20s, then reveal the hilarious group split and who chose what!
@@ -295,10 +308,8 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
 
             {/* ---------------- CARD 3: FRIENDSHIP TEST ---------------- */}
             <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between group">
-              {/* Custom Inline SVG Banner Artwork: Circular score chart, trophy, star-eyed emoji */}
               <div className="w-full h-40 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50 to-blue-50 border border-emerald-100/80 p-3 relative overflow-hidden flex items-center justify-center mb-4">
                 <svg viewBox="0 0 280 140" className="w-full h-full">
-                  {/* Two-tone royal-blue & forest-green circular score chart */}
                   <g transform="translate(65, 70)">
                     <circle cx="0" cy="0" r="42" fill="#0b2545" />
                     <circle cx="0" cy="0" r="35" fill="none" stroke="#3b4cca" strokeWidth="8" strokeDasharray="140 80" />
@@ -307,14 +318,10 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                     <line x1="-12" y1="3" x2="12" y2="3" stroke="#ffffff" strokeWidth="1.5" />
                     <text x="0" y="18" fill="#93c5fd" fontSize="13" fontWeight="800" textAnchor="middle" fontFamily="system-ui, sans-serif">10</text>
                   </g>
-
-                  {/* Golden Trophy */}
                   <g transform="translate(160, 42)">
                     <circle cx="28" cy="28" r="28" fill="#fef3c7" stroke="#fbbf24" strokeWidth="2" />
                     <text x="28" y="38" fontSize="30" textAnchor="middle">🏆</text>
                   </g>
-
-                  {/* Star-Eyed Emojis */}
                   <text x="215" y="48" fontSize="26">🤩</text>
                   <text x="228" y="85" fontSize="20">✨</text>
                 </svg>
@@ -327,7 +334,6 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                   </span>
                   <span className="text-xs font-bold text-slate-500">10-20 Questions</span>
                 </div>
-
                 <h3 className="text-xl font-black text-[#0b2545]">Friendship Test</h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   Personalized <strong>"Know Me Better"</strong> quiz. Build your answers, share on WhatsApp, and see friends battle on your live leaderboard!
@@ -345,58 +351,257 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* ---------------- CARD 4: TIC-TAC-TOE (RESTORED + PLAYABLE LOCAL & MULTIPLAYER) ---------------- */}
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between group">
+              <div className="w-full h-40 rounded-2xl bg-gradient-to-br from-cyan-50 via-blue-50 to-indigo-50 border border-blue-100/80 p-3 relative overflow-hidden flex items-center justify-center mb-4">
+                <svg viewBox="0 0 280 140" className="w-full h-full">
+                  <defs>
+                    <linearGradient id="tttGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#3b4cca" />
+                      <stop offset="100%" stopColor="#60a5fa" />
+                    </linearGradient>
+                  </defs>
+                  {/* 3x3 Grid Outline */}
+                  <line x1="105" y1="20" x2="105" y2="120" stroke="#cbd5e1" strokeWidth="4" strokeLinecap="round" />
+                  <line x1="155" y1="20" x2="155" y2="120" stroke="#cbd5e1" strokeWidth="4" strokeLinecap="round" />
+                  <line x1="60" y1="52" x2="200" y2="52" stroke="#cbd5e1" strokeWidth="4" strokeLinecap="round" />
+                  <line x1="60" y1="88" x2="200" y2="88" stroke="#cbd5e1" strokeWidth="4" strokeLinecap="round" />
+
+                  {/* X marks */}
+                  <g stroke="#3b4cca" strokeWidth="6" strokeLinecap="round">
+                    <line x1="72" y1="26" x2="92" y2="46" />
+                    <line x1="92" y1="26" x2="72" y2="46" />
+                    <line x1="120" y1="60" x2="140" y2="80" />
+                    <line x1="140" y1="60" x2="120" y2="80" />
+                    <line x1="168" y1="94" x2="188" y2="114" />
+                    <line x1="188" y1="94" x2="168" y2="114" />
+                  </g>
+
+                  {/* O marks */}
+                  <circle cx="130" cy="36" r="12" fill="none" stroke="#f43f5e" strokeWidth="5" />
+                  <circle cx="82" cy="70" r="12" fill="none" stroke="#f43f5e" strokeWidth="5" />
+
+                  {/* Winning Strike Line across diagonal */}
+                  <line x1="64" y1="20" x2="196" y2="120" stroke="#fbbf24" strokeWidth="6" strokeLinecap="round" filter="drop-shadow(0 2px 4px rgba(245,158,11,0.5))" />
+
+                  {/* Bot & Sparkle Tag */}
+                  <g transform="translate(210, 25)">
+                    <rect x="0" y="0" width="56" height="28" rx="8" fill="#0b2545" />
+                    <text x="28" y="18" fill="#ffffff" fontSize="11" fontWeight="800" textAnchor="middle">AI BOT</text>
+                  </g>
+                </svg>
+              </div>
+
+              <div className="space-y-2 flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#3b4cca] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                    Strategy Duel • Pass &amp; Play / Bot
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">2 Players</span>
+                </div>
+                <h3 className="text-xl font-black text-[#0b2545]">Tic Tac Toe</h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Classic 3x3 tactical battle. Play solo vs our <strong>Smart Minimax AI</strong>, Pass &amp; Play on one device, or challenge friends online!
+                </p>
+              </div>
+
+              <div className="pt-5 mt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsLocalTicTacToeOpen(true)}
+                  className="flex-1 py-2.5 px-3 rounded-full bg-[#0b2545] hover:bg-[#13315c] text-white font-bold text-xs shadow-sm transition flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                >
+                  <Bot className="w-3.5 h-3.5 text-blue-300" />
+                  <span>Play vs AI / Local</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectGameToCreate('tic_tac_toe')}
+                  className="flex-1 py-2.5 px-3 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-bold text-xs shadow-sm transition flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Create Room</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ---------------- CARD 5: 20-SECOND CHALLENGE (TRIVIA) ---------------- */}
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between group">
+              <div className="w-full h-40 rounded-2xl bg-gradient-to-br from-amber-50 via-orange-50 to-indigo-50 border border-amber-100/80 p-3 relative overflow-hidden flex items-center justify-center mb-4">
+                <svg viewBox="0 0 280 140" className="w-full h-full">
+                  <circle cx="80" cy="70" r="42" fill="#ffffff" stroke="#f59e0b" strokeWidth="4" />
+                  <polygon points="82,42 68,70 80,70 78,98 94,66 82,66" fill="#f59e0b" />
+                  <g transform="translate(145, 25)">
+                    <rect x="0" y="0" width="115" height="40" rx="10" fill="#0b2545" />
+                    <circle cx="16" cy="20" r="10" fill="#3b4cca" />
+                    <text x="16" y="24" fill="#ffffff" fontSize="11" fontWeight="900" textAnchor="middle">A</text>
+                    <text x="36" y="24" fill="#ffffff" fontSize="12" fontWeight="700">Canberra</text>
+                  </g>
+                  <g transform="translate(145, 75)">
+                    <rect x="0" y="0" width="115" height="40" rx="10" fill="#1f9d55" />
+                    <circle cx="16" cy="20" r="10" fill="#ffffff" />
+                    <text x="16" y="24" fill="#1f9d55" fontSize="11" fontWeight="900" textAnchor="middle">✓</text>
+                    <text x="36" y="24" fill="#ffffff" fontSize="12" fontWeight="700">Correct!</text>
+                  </g>
+                </svg>
+              </div>
+
+              <div className="space-y-2 flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                    Fast Knowledge Battle
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">2-12 Players</span>
+                </div>
+                <h3 className="text-xl font-black text-[#0b2545]">20-Second Challenge</h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Fast 4-choice trivia against a rapid <strong>20-second clock</strong> across Sports, Geography, History, and Trivia!
+                </p>
+              </div>
+
+              <div className="pt-5 mt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => handleSelectGameToCreate('trivia')}
+                  className="w-full py-3 px-4 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2 active:scale-[0.98]"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Create Trivia Room</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ---------------- CARD 6: HIGHER OR LOWER ---------------- */}
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between group">
+              <div className="w-full h-40 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 border border-emerald-100/80 p-3 relative overflow-hidden flex items-center justify-center mb-4">
+                <svg viewBox="0 0 280 140" className="w-full h-full">
+                  <g transform="translate(30, 30)">
+                    <rect x="0" y="0" width="95" height="80" rx="14" fill="#ffffff" stroke="#cbd5e1" strokeWidth="2" />
+                    <text x="47" y="32" fill="#64748b" fontSize="10" fontWeight="700" textAnchor="middle">Tokyo</text>
+                    <text x="47" y="60" fill="#0b2545" fontSize="18" fontWeight="900" textAnchor="middle">37.4M</text>
+                  </g>
+                  <g transform="translate(135, 45)">
+                    <circle cx="16" cy="16" r="16" fill="#1f9d55" />
+                    <text x="16" y="22" fill="#ffffff" fontSize="16" fontWeight="900" textAnchor="middle">▲</text>
+                    <circle cx="16" cy="54" r="16" fill="#f43f5e" />
+                    <text x="16" y="60" fill="#ffffff" fontSize="16" fontWeight="900" textAnchor="middle">▼</text>
+                  </g>
+                  <g transform="translate(180, 30)">
+                    <rect x="0" y="0" width="75" height="80" rx="14" fill="#0b2545" />
+                    <text x="37" y="32" fill="#94a3b8" fontSize="10" fontWeight="700" textAnchor="middle">Next City</text>
+                    <text x="37" y="62" fill="#38bdf8" fontSize="28" fontWeight="900" textAnchor="middle">?</text>
+                  </g>
+                </svg>
+              </div>
+
+              <div className="space-y-2 flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#1f9d55] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                    Sudden Death
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">2-8 Players</span>
+                </div>
+                <h3 className="text-xl font-black text-[#0b2545]">Higher or Lower</h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Guess if the next population or number is higher or lower. One wrong guess and you are immediately eliminated!
+                </p>
+              </div>
+
+              <div className="pt-5 mt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => handleSelectGameToCreate('higher_lower')}
+                  className="w-full py-3 px-4 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2 active:scale-[0.98]"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Create Higher/Lower Room</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ---------------- CARD 7: WHO'S MOST LIKELY ---------------- */}
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between group">
+              <div className="w-full h-40 rounded-2xl bg-gradient-to-br from-purple-50 via-pink-50 to-rose-50 border border-purple-100/80 p-3 relative overflow-hidden flex items-center justify-center mb-4">
+                <svg viewBox="0 0 280 140" className="w-full h-full">
+                  <g transform="translate(140, 50)">
+                    <circle cx="0" cy="0" r="28" fill="#3b4cca" />
+                    <text x="0" y="8" fill="#ffffff" fontSize="20" fontWeight="900" textAnchor="middle">👑</text>
+                  </g>
+                  <g transform="translate(70, 75)">
+                    <circle cx="0" cy="0" r="20" fill="#1f9d55" />
+                    <text x="0" y="6" fill="#ffffff" fontSize="13" fontWeight="900" textAnchor="middle">A</text>
+                  </g>
+                  <g transform="translate(210, 75)">
+                    <circle cx="0" cy="0" r="20" fill="#f43f5e" />
+                    <text x="0" y="6" fill="#ffffff" fontSize="13" fontWeight="900" textAnchor="middle">B</text>
+                  </g>
+                  <path d="M 90 70 Q 115 55 125 52" fill="none" stroke="#64748b" strokeWidth="2.5" strokeDasharray="4 4" />
+                  <path d="M 190 70 Q 165 55 155 52" fill="none" stroke="#64748b" strokeWidth="2.5" strokeDasharray="4 4" />
+                </svg>
+              </div>
+
+              <div className="space-y-2 flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                    Group Crown &amp; Reveal
+                  </span>
+                  <span className="text-xs font-bold text-slate-500">2-12 Players</span>
+                </div>
+                <h3 className="text-xl font-black text-[#0b2545]">Who's Most Likely</h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Vote for the friend in the room who best fits each prompt, then reveal the hilarious crowned winner!
+                </p>
+              </div>
+
+              <div className="pt-5 mt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => handleSelectGameToCreate('most_likely')}
+                  className="w-full py-3 px-4 rounded-full bg-[#3b4cca] hover:bg-[#2f3da7] text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-2 active:scale-[0.98]"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Create Most Likely Room</span>
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* 4. My Quizzes & Live Results Card (Persistent access after closing app) */}
+          {/* 4. My Quizzes & Live Results Card */}
           {savedQuizzes.length > 0 && (
-            <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4 animate-fade-in">
+            <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 bg-amber-50 text-amber-600 rounded-xl border border-amber-200">
-                    <Trophy className="w-5 h-5 text-amber-500" />
+                    <Trophy className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-black text-base text-[#0b2545]">My Quizzes &amp; Live Results</h3>
-                    <p className="text-xs text-slate-500">View live scoreboards and friend responses anytime</p>
+                    <h3 className="font-black text-sm text-[#0b2545]">
+                      My Quizzes &amp; Live Results ({savedQuizzes.length})
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Persistent history from your browser
+                    </p>
                   </div>
                 </div>
-                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
-                  {savedQuizzes.length} saved
-                </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {savedQuizzes.slice(0, 4).map((q) => (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {savedQuizzes.map((q) => (
                   <div
                     key={q.code}
-                    className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col justify-between gap-3 hover:border-[#3b4cca]/40 hover:shadow-xs transition"
+                    className="p-3.5 rounded-2xl border border-slate-200 bg-[#f8fafc] hover:bg-white hover:border-[#1f9d55] transition space-y-2.5 shadow-2xs"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="px-2 py-0.5 rounded-full bg-[#0b2545] text-white font-mono font-bold text-xs tracking-wider">
-                            {q.code}
-                          </span>
-                          {q.isCreator ? (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              Creator
-                            </span>
-                          ) : q.myScore !== undefined ? (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
-                              Score: {q.myScore}/{q.totalQuestions}
-                            </span>
-                          ) : null}
-                        </div>
-                        <h4 className="font-bold text-slate-900 text-xs mt-1.5">
-                          {q.isCreator ? 'Your Friendship Quiz' : `${q.creatorName}'s Friendship Quiz`}
-                        </h4>
-                      </div>
-
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-black text-sm text-[#0b2545] tracking-wider">
+                        {q.code}
+                      </span>
                       <button
                         type="button"
                         onClick={() => handleCopyQuizLink(q.code)}
-                        title="Copy Share Link"
-                        className="p-1.5 text-slate-500 hover:text-[#3b4cca] rounded-lg transition"
+                        className="p-1 text-slate-400 hover:text-emerald-700 transition"
+                        title="Copy share link"
                       >
                         {copiedQuizCode === q.code ? (
                           <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -427,13 +632,13 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
             <div>
               <span className="text-xs font-bold uppercase text-[#3b4cca]">Room Creator</span>
               <h3 className="text-xl font-black text-[#0b2545]">
-                Create {selectedGameType === 'vote_reveal' ? 'Would You Rather' : 'Word Chain'}
+                Create {selectedGameType.replace('_', ' ').toUpperCase()}
               </h3>
             </div>
             <button
               type="button"
               onClick={() => setActiveTab('hub')}
-              className="text-xs font-bold text-slate-500 hover:text-slate-800 transition py-1 px-2 rounded-lg bg-slate-100"
+              className="text-xs font-bold text-slate-500 hover:text-slate-800 transition py-1 px-2.5 rounded-xl bg-slate-100"
             >
               ✕ Back
             </button>
@@ -455,49 +660,134 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
               />
             </div>
 
-            {/* Category / Theme Selector */}
+            {/* Category / Mode Selector based on selected game */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-[#0b2545] mb-1.5">
-                {selectedGameType === 'vote_reveal' ? 'Choose Dilemma Theme' : 'Choose Word Category'}
-              </label>
-
-              {selectedGameType === 'vote_reveal' ? (
-                <div className="grid grid-cols-2 gap-2.5">
-                  {Object.values(VOTE_REVEAL_CATEGORIES).map((cat) => (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setCategory(cat.id)}
-                      className={`p-3 rounded-2xl border text-left transition ${
-                        category === cat.id
-                          ? 'bg-blue-50 border-[#3b4cca] text-[#0b2545] font-bold shadow-2xs'
-                          : 'bg-[#f8fafc] border-slate-200 text-slate-700'
-                      }`}
-                    >
-                      <span className="text-2xl">{cat.icon}</span>
-                      <div className="font-bold text-xs mt-1 text-[#0b2545]">{cat.name}</div>
-                      <div className="text-[10px] text-slate-500 line-clamp-1">{cat.description}</div>
-                    </button>
-                  ))}
+              {selectedGameType === 'tic_tac_toe' ? (
+                <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-2xl text-xs text-slate-700 space-y-1">
+                  <div className="font-bold text-[#0b2545] text-sm">⭕ Classic 3x3 Grid Mode</div>
+                  <p className="text-[11px] leading-relaxed">
+                    2 players will take seats as X and O. If more than 2 players join, the host can choose who plays while others spectate!
+                  </p>
+                </div>
+              ) : selectedGameType === 'higher_lower' ? (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#0b2545] mb-1.5">
+                    Choose Dataset Category
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {Object.values(HIGHER_LOWER_CATEGORIES).map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setCategory(cat.id)}
+                        className={`p-3 rounded-2xl border text-left transition ${
+                          category === cat.id
+                            ? 'bg-blue-50 border-[#3b4cca] text-[#0b2545] font-bold shadow-2xs'
+                            : 'bg-[#f8fafc] border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span className="text-2xl">{cat.icon}</span>
+                        <div className="font-bold text-xs mt-1 text-[#0b2545]">{cat.name}</div>
+                        <div className="text-[10px] text-slate-500 leading-snug break-words">{cat.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : selectedGameType === 'trivia' ? (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#0b2545] mb-1.5">
+                    Choose Trivia Category
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {Object.values(TRIVIA_CATEGORIES).map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setCategory(cat.id)}
+                        className={`p-3 rounded-2xl border text-left transition ${
+                          category === cat.id
+                            ? 'bg-blue-50 border-[#3b4cca] text-[#0b2545] font-bold shadow-2xs'
+                            : 'bg-[#f8fafc] border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span className="text-2xl">{cat.icon}</span>
+                        <div className="font-bold text-xs mt-1 text-[#0b2545]">{cat.name}</div>
+                        <div className="text-[10px] text-slate-500 leading-snug break-words">{cat.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : selectedGameType === 'most_likely' ? (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#0b2545] mb-1.5">
+                    Choose Prompt Category
+                  </label>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {Object.values(MOST_LIKELY_CATEGORIES).map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setCategory(cat.id)}
+                        className={`p-3 rounded-2xl border text-left transition ${
+                          category === cat.id
+                            ? 'bg-blue-50 border-[#3b4cca] text-[#0b2545] font-bold shadow-2xs'
+                            : 'bg-[#f8fafc] border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span className="text-2xl">{cat.icon}</span>
+                        <div className="font-bold text-xs mt-1 text-[#0b2545]">{cat.name}</div>
+                        <div className="text-[10px] text-slate-500 leading-snug break-words">{cat.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : selectedGameType === 'vote_reveal' ? (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#0b2545] mb-1.5">
+                    Choose Dilemma Theme
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {Object.values(VOTE_REVEAL_CATEGORIES).map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setCategory(cat.id)}
+                        className={`p-3 rounded-2xl border text-left transition ${
+                          category === cat.id
+                            ? 'bg-blue-50 border-[#3b4cca] text-[#0b2545] font-bold shadow-2xs'
+                            : 'bg-[#f8fafc] border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span className="text-2xl">{cat.icon}</span>
+                        <div className="font-bold text-xs mt-1 text-[#0b2545]">{cat.name}</div>
+                        <div className="text-[10px] text-slate-500 leading-snug break-words">{cat.description}</div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {Object.values(CATEGORIES).map((cat) => (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setCategory(cat.id)}
-                      className={`p-2.5 rounded-2xl border text-left transition ${
-                        category === cat.id
-                          ? 'bg-emerald-50 border-[#1f9d55] text-emerald-950 font-bold shadow-2xs'
-                          : 'bg-[#f8fafc] border-slate-200 text-slate-700'
-                      }`}
-                    >
-                      <span className="text-xl">{cat.icon}</span>
-                      <div className="font-bold text-xs mt-1 text-slate-900 truncate">{cat.name}</div>
-                      <div className="text-[10px] text-slate-500">{cat.words.length}+ words</div>
-                    </button>
-                  ))}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#0b2545] mb-1.5">
+                    Choose Word Category
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {Object.values(CATEGORIES).map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setCategory(cat.id)}
+                        className={`p-2.5 rounded-2xl border text-left transition ${
+                          category === cat.id
+                            ? 'bg-emerald-50 border-[#1f9d55] text-emerald-950 font-bold shadow-2xs'
+                            : 'bg-[#f8fafc] border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span className="text-xl">{cat.icon}</span>
+                        <div className="font-bold text-xs mt-1 text-slate-900 truncate">{cat.name}</div>
+                        <div className="text-[10px] text-slate-500">{cat.words.length}+ words</div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -520,7 +810,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('hub')}
-              className="text-xs font-bold text-slate-500 hover:text-slate-800 transition py-1 px-2 rounded-lg bg-slate-100"
+              className="text-xs font-bold text-slate-500 hover:text-slate-800 transition py-1 px-2.5 rounded-xl bg-slate-100"
             >
               ✕ Back
             </button>
@@ -529,16 +819,16 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
           <form onSubmit={handleQuickJoin} className="space-y-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-[#0b2545] mb-1.5">
-                Room Code
+                Room Code (4 Letters)
               </label>
               <input
                 type="text"
-                placeholder="ABCD"
-                maxLength={4}
+                placeholder="e.g. ABCD"
+                maxLength={10}
                 value={inputCode}
                 onChange={(e) => setInputCode(e.target.value.toUpperCase())}
                 required
-                className="w-full px-4 py-3 bg-[#f8fafc] border border-slate-300 rounded-2xl text-center text-2xl font-mono font-bold tracking-widest text-[#0b2545] uppercase focus:outline-none focus:border-[#3b4cca]"
+                className="w-full px-4 py-3 bg-[#f8fafc] border border-slate-300 rounded-2xl text-center text-xl font-mono font-bold tracking-widest text-[#0b2545] placeholder-slate-400 focus:outline-none focus:border-[#3b4cca] uppercase"
               />
             </div>
 
@@ -548,7 +838,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="e.g. WordNinja"
+                placeholder="e.g. GameMaster"
                 maxLength={20}
                 value={displayName}
                 onChange={(e) => saveName(e.target.value)}
@@ -560,10 +850,10 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 px-6 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-bold text-sm shadow-md shadow-emerald-700/20 transition flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+              className="w-full mt-2 py-3.5 px-6 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-bold text-sm shadow-md shadow-emerald-700/20 transition flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
             >
-              <span>{loading ? 'Joining Room...' : 'Enter Game Lobby'}</span>
               <ArrowRight className="w-4 h-4" />
+              <span>{loading ? 'Joining Room...' : 'Enter Game Lobby'}</span>
             </button>
           </form>
         </div>

@@ -162,7 +162,7 @@ function MainContent() {
 
       <footer className="relative z-10 py-6 border-t border-slate-200 bg-white/70 backdrop-blur-xs text-center text-xs text-slate-500 space-y-1">
         <p className="font-semibold text-slate-700">
-          Party Game Hub • Word Chain • Would You Rather • Friendship Test
+          PartyHub • Word Chain • Would You Rather • Friendship Quiz • Tic Tac Toe • Trivia • Higher or Lower • Most Likely
         </p>
         <p className="text-[11px] text-slate-400">
           Designed for instant daylight mobile &amp; desktop play • Powered by React &amp; Supabase
