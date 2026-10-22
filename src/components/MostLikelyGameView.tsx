@@ -10,6 +10,9 @@ import {
   HelpCircle,
   RotateCcw,
 } from 'lucide-react';
+import { AvatarMedallion } from './AvatarMedallion';
+import { getAvatarForPlayer, extractPlayerAvatar } from '../lib/avatars';
+import { haptics } from '../lib/haptics';
 
 export const MostLikelyGameView: React.FC = () => {
   const {
@@ -62,24 +65,9 @@ export const MostLikelyGameView: React.FC = () => {
     }))
     .sort((a, b) => b.voteCount - a.voteCount);
 
-  const getAvatarColor = (name: string) => {
-    const colors = [
-      'from-blue-600 to-indigo-700',
-      'from-pink-600 to-rose-700',
-      'from-amber-500 to-orange-600',
-      'from-emerald-600 to-teal-700',
-      'from-cyan-600 to-blue-700',
-      'from-violet-600 to-fuchsia-700',
-    ];
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return colors[Math.abs(hash) % colors.length];
-  };
-
   const handleVote = async (choiceId: string) => {
     if (isRevealed || submittingVote !== null) return;
+    haptics.tap();
     setSubmittingVote(choiceId);
     await submitVote(choiceId);
     setSubmittingVote(null);
@@ -210,16 +198,14 @@ export const MostLikelyGameView: React.FC = () => {
                 } ${isLocked && !isSelected ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className={`w-9 h-9 rounded-xl bg-gradient-to-tr ${getAvatarColor(
-                      opt.display_name
-                    )} flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-2xs`}
-                  >
-                    {opt.display_name.charAt(0).toUpperCase()}
-                  </div>
+                  <AvatarMedallion
+                    avatar={getAvatarForPlayer(opt.display_name)}
+                    size="sm"
+                    showGlow={isSelected}
+                  />
                   <div className="min-w-0">
                     <div className="text-xs sm:text-sm font-bold text-[#0b2545] break-words">
-                      {opt.display_name} {opt.id === localPlayer?.playerId ? '(You)' : ''}
+                      {extractPlayerAvatar(opt.display_name).cleanName} {opt.id === localPlayer?.playerId ? '(You)' : ''}
                     </div>
                     {isRevealed && (
                       <div className="text-[11px] text-slate-500 font-medium">

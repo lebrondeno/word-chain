@@ -11,6 +11,9 @@ import {
   Scale,
   RotateCcw,
 } from 'lucide-react';
+import { AvatarMedallion } from './AvatarMedallion';
+import { getAvatarForPlayer, extractPlayerAvatar } from '../lib/avatars';
+import { haptics } from '../lib/haptics';
 
 export const HigherLowerGameView: React.FC = () => {
   const {
@@ -55,6 +58,7 @@ export const HigherLowerGameView: React.FC = () => {
 
   const handleGuess = async (guess: 'higher' | 'lower') => {
     if (!isMyTurn || submittingGuess) return;
+    haptics.tap();
     setSubmittingGuess(guess);
     await submitGuess(guess);
     setSubmittingGuess(null);
@@ -249,9 +253,16 @@ export const HigherLowerGameView: React.FC = () => {
                     : 'bg-slate-50 border-slate-200 text-slate-700'
                 }`}
               >
-                <span className="break-words font-semibold">
-                  {player.display_name} {isMe ? '(You)' : ''}
-                </span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <AvatarMedallion
+                    avatar={getAvatarForPlayer(player.display_name)}
+                    size="xs"
+                    showGlow={isTurn && !isElim}
+                  />
+                  <span className="break-words font-semibold">
+                    {extractPlayerAvatar(player.display_name).cleanName} {isMe ? '(You)' : ''}
+                  </span>
+                </div>
                 {isElim && <span className="text-[10px] text-rose-600 font-bold ml-1">OUT</span>}
                 {isTurn && !isElim && (
                   <span className="w-2 h-2 rounded-full bg-[#3b4cca] animate-ping ml-1" />

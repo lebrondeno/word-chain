@@ -5,6 +5,9 @@ import { sanitizeRoomCode } from '../lib/roomCode';
 import { getMySavedQuizzes, type UserSavedQuiz } from '../lib/savedQuizzes';
 import { TicTacToeGameView } from './TicTacToeGameView';
 import { useHistoryLayer } from '../hooks/useHistoryLayer';
+import { getSavedAvatar, saveAvatar, formatPlayerNameWithAvatar, extractPlayerAvatar } from '../lib/avatars';
+import { AvatarPicker } from './AvatarPicker';
+import { haptics } from '../lib/haptics';
 import {
   Play,
   ArrowRight,
@@ -155,8 +158,11 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
   const [filter, setFilter] = useState<GameFilter>('all');
   const [createFor, setCreateFor] = useState<MultiplayerGameType | null>(null);
   const [category, setCategory] = useState<string>('cities');
+  const [avatar, setAvatar] = useState<string>(() => getSavedAvatar());
   const [displayName, setDisplayName] = useState(() => {
-    return typeof window !== 'undefined' ? localStorage.getItem('word_chain_saved_name') || '' : '';
+    if (typeof window === 'undefined') return '';
+    const raw = localStorage.getItem('word_chain_saved_name') || '';
+    return extractPlayerAvatar(raw).cleanName;
   });
   const [inputCode, setInputCode] = useState(() => (initialRoomCode ? sanitizeRoomCode(initialRoomCode) : ''));
   const [savedQuizzes] = useState<UserSavedQuiz[]>(() => getMySavedQuizzes());
@@ -170,6 +176,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
 
   const handleCopyQuizLink = (code: string) => {
     if (typeof window === 'undefined') return;
+    haptics.tap();
     const url = `${window.location.origin}/?quiz=${code}`;
     navigator.clipboard.writeText(url);
     setCopiedQuizCode(code);
@@ -177,13 +184,21 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
   };
 
   const saveName = (name: string) => {
-    setDisplayName(name);
+    const clean = extractPlayerAvatar(name).cleanName;
+    setDisplayName(clean);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('word_chain_saved_name', name.trim());
+      localStorage.setItem('word_chain_saved_name', clean.trim());
     }
   };
 
+  const handleAvatarSelect = (em: string) => {
+    haptics.tap();
+    setAvatar(em);
+    saveAvatar(em);
+  };
+
   const handleSelectGame = (game: HubGame) => {
+    haptics.tap();
     setError(null);
     if (game.id === 'friendship_test') {
       onOpenFriendshipQuiz?.();
@@ -202,7 +217,9 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
       setError('Please enter your name to create the room');
       return;
     }
-    await createGame(displayName.trim(), category, createFor);
+    haptics.pulse();
+    const finalName = formatPlayerNameWithAvatar(displayName.trim(), avatar);
+    await createGame(finalName, category, createFor);
   };
 
   const handleQuickJoin = async (e: React.FormEvent) => {
@@ -215,6 +232,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
 
     // If code looks like a friendship quiz code (5+ chars)
     if (clean.length >= 5 && onOpenFriendshipQuiz) {
+      haptics.tap();
       onOpenFriendshipQuiz(clean);
       return;
     }
@@ -226,7 +244,9 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
       return;
     }
 
-    await joinGame(clean, displayName.trim());
+    haptics.pulse();
+    const finalName = formatPlayerNameWithAvatar(displayName.trim(), avatar);
+    await joinGame(clean, finalName);
   };
 
   // Local Tic-Tac-Toe (bot / pass & play) launched from the Hub
@@ -277,7 +297,10 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
                 <button
                   key={f.id}
                   type="button"
-                  onClick={() => setFilter(f.id)}
+                  onClick={() => {
+                    haptics.tap();
+                    setFilter(f.id);
+                  }}
                   className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap border shrink-0 ${
                     filter === f.id
                       ? 'bg-[#0b2545] text-white border-[#0b2545] shadow-md'
@@ -345,17 +368,26 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Your Nickname
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. GameMaster"
-                maxLength={20}
-                value={displayName}
-                onChange={(e) => saveName(e.target.value)}
-                className="w-full px-4 py-3 bg-white/70 border border-white rounded-2xl text-slate-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-cyan-300"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Your Nickname &amp; Avatar
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <AvatarPicker
+                  selectedEmoji={avatar}
+                  onSelect={handleAvatarSelect}
+                  compact
+                />
+                <input
+                  type="text"
+                  placeholder="e.g. GameMaster"
+                  maxLength={20}
+                  value={displayName}
+                  onChange={(e) => saveName(e.target.value)}
+                  className="flex-1 px-4 py-3 bg-white/70 border border-white rounded-2xl text-slate-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-cyan-300"
+                />
+              </div>
             </div>
             {error && (
               <div className="p-2 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
@@ -445,6 +477,7 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
               key={item.id}
               type="button"
               onClick={() => {
+                haptics.tap();
                 setError(null);
                 setTab(item.id);
               }}
@@ -488,18 +521,27 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Your Nickname
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. MasterWordsmith"
-                maxLength={20}
-                value={displayName}
-                onChange={(e) => saveName(e.target.value)}
-                required
-                className="w-full px-4 py-3 bg-white/80 border border-white rounded-2xl text-slate-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-cyan-300"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Your Nickname &amp; Avatar
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <AvatarPicker
+                  selectedEmoji={avatar}
+                  onSelect={handleAvatarSelect}
+                  compact
+                />
+                <input
+                  type="text"
+                  placeholder="e.g. MasterWordsmith"
+                  maxLength={20}
+                  value={displayName}
+                  onChange={(e) => saveName(e.target.value)}
+                  required
+                  className="flex-1 px-4 py-3 bg-white/80 border border-white rounded-2xl text-slate-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-cyan-300"
+                />
+              </div>
             </div>
 
             {createFor === 'tic_tac_toe' ? (

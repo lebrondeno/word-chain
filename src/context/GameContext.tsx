@@ -208,25 +208,27 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [fetchSessionState, localPlayer?.sessionId, updateLocalPlayer]);
 
-  // Resync on tab resume (e.g. a phone locked mid-game). Mobile browsers
-  // routinely suspend JS execution - and the realtime socket with it - while
-  // a tab is backgrounded; most reconnect their websocket automatically on
-  // resume, but this is a belt-and-suspenders fetch so a player always sees
-  // fresh, correct state the instant the tab becomes visible again rather
-  // than trusting that reconnect timing. localStorage already carries the
-  // session across the background/foreground cycle (see the restore effect
-  // above), so this only needs to refresh data, never re-establish identity.
+  // Resync on tab resume (e.g. a phone locked mid-game or switching back from
+  // WhatsApp/social share). Mobile browsers routinely suspend JS execution - and
+  // the realtime socket with it - while a tab is backgrounded. This ensures instant
+  // synchronization on visibilitychange, window focus, and pageshow.
   useEffect(() => {
     if (!localPlayer?.sessionId) return;
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+    const handleResume = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchSessionState(localPlayer.sessionId);
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('focus', handleResume);
+    window.addEventListener('pageshow', handleResume);
+    return () => {
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('focus', handleResume);
+      window.removeEventListener('pageshow', handleResume);
+    };
   }, [fetchSessionState, localPlayer?.sessionId]);
 
   // Realtime subscription setup

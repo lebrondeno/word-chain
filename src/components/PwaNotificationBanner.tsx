@@ -139,10 +139,12 @@ export const PwaNotificationBanner: React.FC<PwaNotificationBannerProps> = () =>
       )}
 
       {/* ---------------------------------------------------- */}
-      {/* 2. PWA INSTALL BANNER (Floating Light Classic Card)   */}
+      {/* 2. PWA INSTALL BANNER (Desktop/Tablet Card only;      */}
+      {/*    mobile uses the top header bar pill to avoid      */}
+      {/*    cluttering the bottom thumb zone)                 */}
       {/* ---------------------------------------------------- */}
       {!pwaState.isStandalone && !isDismissed && !pwaState.isUpdateAvailable && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-sm z-40 animate-fade-in">
+        <div className="hidden sm:block fixed sm:right-6 sm:bottom-6 sm:max-w-sm z-40 animate-fade-in">
           <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 text-slate-800 shadow-xl shadow-slate-900/10 flex flex-col gap-3 relative">
             {/* Close / Dismiss button */}
             <button

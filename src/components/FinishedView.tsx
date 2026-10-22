@@ -4,7 +4,6 @@ import { CATEGORIES, getFirstLetter, getLastLetter } from '../data';
 import { HIGHER_LOWER_CATEGORIES } from '../data/prompts';
 import confetti from 'canvas-confetti';
 import {
-  Trophy,
   RotateCcw,
   Crown,
   History,
@@ -12,14 +11,23 @@ import {
   CheckCircle2,
   XCircle,
   Scale,
-  Handshake,
+  Share2,
+  Sparkles,
 } from 'lucide-react';
+import { CountUp } from './CountUp';
+import { shareOrDownloadScorecard } from '../lib/scorecardGenerator';
+import { getAvatarForPlayer, extractPlayerAvatar } from '../lib/avatars';
+import { AvatarMedallion } from './AvatarMedallion';
+import { haptics } from '../lib/haptics';
 
 export const FinishedView: React.FC = () => {
   const { session, localPlayer, winnerPlayer, resetGame, leaveGame } = useGame();
   const [resetting, setResetting] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
   useEffect(() => {
+    haptics.celebrate();
     // Launch celebratory confetti bursts
     const end = Date.now() + 3 * 1000;
     const colors = ['#3b4cca', '#1f9d55', '#f43f5e', '#f59e0b', '#8b5cf6'];
@@ -71,6 +79,42 @@ export const FinishedView: React.FC = () => {
     setResetting(false);
   };
 
+  const handleShareBragCard = async () => {
+    haptics.tap();
+    setIsSharing(true);
+    setShareFeedback(null);
+
+    const title = isTicTacToe ? 'Tic-Tac-Toe' : isHigherLower ? 'Higher or Lower' : 'Word Chain';
+    const rawWinner = winnerPlayer?.display_name || (isTicTacToe ? `Player ${ticTacToeWinnerMark}` : 'Champion');
+    const { cleanName, avatar } = extractPlayerAvatar(rawWinner);
+    const scoreVal = isTicTacToe
+      ? `${ticTacToeMovesPlaced} moves`
+      : isHigherLower
+      ? `${guessHistory.length} guesses`
+      : `${usedWordsList.length} words`;
+
+    const res = await shareOrDownloadScorecard({
+      gameTitle: title,
+      playerName: cleanName,
+      avatarEmoji: avatar.emoji,
+      scoreText: isTicTacToeDraw ? '🤝 Stalemate' : '🏆 1st Place',
+      subtitle: `${scoreVal} • Room ${session.room_code}`,
+      roomCode: session.room_code,
+    });
+
+    setIsSharing(false);
+    if (res.method === 'share') {
+      setShareFeedback('Scorecard shared successfully!');
+    } else if (res.method === 'download') {
+      setShareFeedback('Scorecard saved to downloads & link copied!');
+    } else {
+      setShareFeedback('Share link copied to clipboard!');
+    }
+    setTimeout(() => setShareFeedback(null), 3000);
+  };
+
+  const winnerAvatar = getAvatarForPlayer(winnerPlayer?.display_name || 'Champion');
+
   return (
     <div className="w-full max-w-md mx-auto px-4 py-6 space-y-5 animate-fade-in text-slate-800">
       {/* 1. Victory Celebration Card */}
@@ -78,13 +122,11 @@ export const FinishedView: React.FC = () => {
         {/* Subtle accent glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-24 bg-amber-400/15 rounded-full blur-2xl pointer-events-none" />
 
-        {/* Crown Icon */}
+        {/* Winner Avatar Medallion with Crown */}
         <div className="relative inline-block mb-3">
-          <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-400 via-amber-500 to-yellow-300 flex items-center justify-center text-slate-950 shadow-md shadow-amber-400/25 mx-auto">
-            {isTicTacToeDraw ? <Handshake className="w-10 h-10 text-slate-900" /> : <Trophy className="w-10 h-10 text-slate-900" />}
-          </div>
+          <AvatarMedallion avatar={winnerAvatar} size="xl" showGlow />
           {!isTicTacToeDraw && (
-            <div className="absolute -top-2 -right-2 p-1.5 bg-yellow-400 rounded-full text-slate-950 shadow">
+            <div className="absolute -top-1 -right-1 p-1 bg-amber-400 rounded-full text-slate-950 shadow-md ring-2 ring-white">
               <Crown className="w-4 h-4 fill-current" />
             </div>
           )}
@@ -94,11 +136,11 @@ export const FinishedView: React.FC = () => {
           {isTicTacToeDraw ? '🤝 Stalemate!' : isMeWinner ? '🎉 Victory Is Yours!' : '🏆 Game Champion'}
         </div>
 
-        <h2 className="text-2xl sm:text-3xl font-black text-[#0b2545] mb-1">
+        <h2 className="text-2xl sm:text-3xl font-black text-[#0b2545] mb-1 font-heading">
           {isTicTacToeDraw
             ? "It's a Draw!"
             : winnerPlayer
-            ? winnerPlayer.display_name
+            ? extractPlayerAvatar(winnerPlayer.display_name).cleanName
             : isTicTacToe
             ? `Player ${ticTacToeWinnerMark} Won!`
             : 'Winner!'}
@@ -126,8 +168,11 @@ export const FinishedView: React.FC = () => {
             <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-0.5">
               {isTicTacToe ? 'Marks Placed' : isHigherLower ? 'Guesses Made' : 'Words Linked'}
             </div>
-            <div className="text-2xl font-black text-[#0b2545]">
-              {isTicTacToe ? ticTacToeMovesPlaced : isHigherLower ? guessHistory.length : usedWordsList.length}
+            <div className="text-2xl font-black text-[#0b2545] font-heading">
+              <CountUp
+                end={isTicTacToe ? ticTacToeMovesPlaced : isHigherLower ? guessHistory.length : usedWordsList.length}
+                duration={700}
+              />
             </div>
           </div>
 
@@ -143,6 +188,30 @@ export const FinishedView: React.FC = () => {
 
         {/* Action Buttons */}
         <div className="space-y-2.5">
+          {/* Share Brag Card Button */}
+          <button
+            type="button"
+            onClick={handleShareBragCard}
+            disabled={isSharing}
+            className="w-full py-3.5 px-4 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-indigo-600/25 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+          >
+            {isSharing ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <Share2 className="w-4 h-4 text-cyan-200" />
+                <span>📸 Share Brag Card</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              </>
+            )}
+          </button>
+
+          {shareFeedback && (
+            <div className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl py-2 px-3 animate-fade-in">
+              {shareFeedback}
+            </div>
+          )}
+
           {localPlayer?.isHost && (
             <button
               onClick={handlePlayAgain}

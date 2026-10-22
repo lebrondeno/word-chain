@@ -1,27 +1,14 @@
 import React from 'react';
 import { useGame } from '../context/GameContext';
 import { Trophy, X, Medal } from 'lucide-react';
+import { AvatarMedallion } from './AvatarMedallion';
+import { getAvatarForPlayer, extractPlayerAvatar } from '../lib/avatars';
+import { CountUp } from './CountUp';
 
 interface GameNightLeaderboardProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
-const getAvatarColor = (name: string) => {
-  const colors = [
-    'from-blue-600 to-indigo-700',
-    'from-pink-600 to-rose-700',
-    'from-amber-500 to-orange-600',
-    'from-emerald-600 to-teal-700',
-    'from-cyan-600 to-blue-700',
-    'from-violet-600 to-fuchsia-700',
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-};
 
 export const GameNightLeaderboard: React.FC<GameNightLeaderboardProps> = ({ isOpen, onClose }) => {
   const { players, localPlayer } = useGame();
@@ -77,16 +64,14 @@ export const GameNightLeaderboard: React.FC<GameNightLeaderboardProps> = ({ isOp
                   <div className="w-6 text-center font-mono font-black text-xs text-slate-400">
                     {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
                   </div>
-                  <div
-                    className={`w-9 h-9 rounded-xl bg-gradient-to-tr ${getAvatarColor(
-                      player.display_name
-                    )} flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-2xs`}
-                  >
-                    {player.display_name.charAt(0).toUpperCase()}
-                  </div>
+                  <AvatarMedallion
+                    avatar={getAvatarForPlayer(player.display_name)}
+                    size="sm"
+                    showGlow={isTop}
+                  />
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-[#0b2545] break-words">
-                      {player.display_name} {isMe ? '(You)' : ''}
+                      {extractPlayerAvatar(player.display_name).cleanName} {isMe ? '(You)' : ''}
                     </div>
                     {isTop && (
                       <div className="text-[10px] text-amber-600 font-bold flex items-center gap-1">
@@ -97,7 +82,7 @@ export const GameNightLeaderboard: React.FC<GameNightLeaderboardProps> = ({ isOp
                 </div>
 
                 <div className="font-mono font-black text-sm text-[#0b2545] bg-white px-3 py-1 rounded-xl border border-slate-200">
-                  {player.total_score || 0} pts
+                  <CountUp end={player.total_score || 0} duration={600} suffix=" pts" />
                 </div>
               </div>
             );

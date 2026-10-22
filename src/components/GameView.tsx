@@ -15,6 +15,9 @@ import {
   CheckCircle2,
   Flame,
 } from 'lucide-react';
+import { AvatarMedallion } from './AvatarMedallion';
+import { getAvatarForPlayer, extractPlayerAvatar } from '../lib/avatars';
+import { haptics } from '../lib/haptics';
 
 interface WordChainGameViewProps {
   session: GameSession;
@@ -92,8 +95,11 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
     setSubmitting(false);
 
     if (res.success) {
+      haptics.success();
       setInputWord('');
       setLocalFeedback(null);
+    } else {
+      haptics.warning();
     }
   };
 
@@ -324,19 +330,13 @@ const WordChainGameView: React.FC<WordChainGameViewProps> = ({ session }) => {
                 }`}
               >
                 <div className="flex items-center gap-2 overflow-hidden">
-                  <div
-                    className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                      isElim
-                        ? 'bg-slate-200 text-slate-400'
-                        : isTurn
-                        ? 'bg-[#3b4cca] text-white animate-pulse'
-                        : 'bg-slate-200 text-slate-600'
-                    }`}
-                  >
-                    {player.display_name.charAt(0).toUpperCase()}
-                  </div>
+                  <AvatarMedallion
+                    avatar={getAvatarForPlayer(player.display_name)}
+                    size="xs"
+                    showGlow={isTurn && !isElim}
+                  />
                   <div className="break-words font-medium">
-                    {player.display_name} {isMe ? '(You)' : ''}
+                    {extractPlayerAvatar(player.display_name).cleanName} {isMe ? '(You)' : ''}
                   </div>
                 </div>
 

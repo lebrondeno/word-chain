@@ -7,6 +7,16 @@ import { createJiti } from 'jiti';
 
 const jiti = createJiti(import.meta.url);
 
+if (typeof globalThis.localStorage === 'undefined') {
+  const map = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, val) => map.set(key, String(val)),
+    removeItem: (key) => map.delete(key),
+    clear: () => map.clear(),
+  };
+}
+
 const {
   validateWordSubmission,
   normalizeWord,
@@ -112,6 +122,31 @@ const {
   checkForAppUpdate,
   APP_BUILD_INFO,
 } = await jiti.import('../src/utils/pwa.ts');
+
+const {
+  haptics,
+  isHapticsSupported,
+  isFeedbackMuted,
+} = await jiti.import('../src/lib/haptics.ts');
+
+const {
+  AVATAR_LIST,
+  getSavedAvatar,
+  saveAvatar,
+  hashString,
+  extractPlayerAvatar,
+  getAvatarForPlayer,
+  formatPlayerNameWithAvatar,
+} = await jiti.import('../src/lib/avatars.ts');
+
+const {
+  generateScorecardCanvas,
+  generateScorecardBlob,
+  generateScorecardDataUrl,
+  shareOrDownloadScorecard,
+} = await jiti.import('../src/lib/scorecardGenerator.ts');
+
+const { easeOutCubic } = await jiti.import('../src/lib/animation.ts');
 
 test('Word Normalization and Letter Extraction', () => {
   assert.equal(normalizeWord('  Tokyo  '), 'tokyo');
@@ -1251,4 +1286,211 @@ test('Friendship Test - Shared link UI wiring & responsive viewport', () => {
   assert.ok(viewport[1].includes('initial-scale=1.0'));
   assert.ok(viewport[1].includes('maximum-scale=5.0'));
   assert.equal(viewport[1].includes('user-scalable=no'), false);
+});
+
+test('Ambient Mesh Lighting, Specular Highlights & Google Fonts (index.html & CSS)', () => {
+  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(rootDir, 'src', 'index.css'), 'utf8');
+  const pwaBanner = fs.readFileSync(path.join(rootDir, 'src', 'components', 'PwaNotificationBanner.tsx'), 'utf8');
+
+  // 1. Google Fonts: Plus Jakarta Sans & Inter
+  assert.ok(html.includes('fonts.googleapis.com'), 'fonts.googleapis.com link present');
+  assert.ok(html.includes('Plus+Jakarta+Sans'), 'Plus Jakarta Sans font linked');
+  assert.ok(html.includes('family=Inter'), 'Inter font linked');
+
+  // 2. Ambient radial mesh glow bloom in index.html
+  assert.ok(html.includes('id="ambient-mesh-glow"'), 'ambient mesh glow wrapper present');
+  assert.ok(html.includes('bg-indigo-600/20'), 'indigo ambient glow bloom present');
+  assert.ok(html.includes('bg-emerald-500/15'), 'emerald ambient glow bloom present');
+
+  // 3. CSS Typography rules
+  assert.ok(css.includes("'Inter'"), 'Inter set as default body font');
+  assert.ok(css.includes("'Plus Jakarta Sans'"), 'Plus Jakarta Sans heading font set');
+
+  // 4. Studio Specular Highlights on frosted glass
+  assert.ok(css.includes('border-top: 1px solid rgba(255, 255, 255,'), 'specular top edge border catch present');
+  assert.ok(css.includes('inset 0 1px 0 rgba(255, 255, 255,'), 'inner specular top light catch present');
+  assert.ok(css.includes('.specular-top'), 'specular-top utility class present');
+
+  // 5. Clean mobile thumb zone (no duplicate floating install popup on mobile screens)
+  assert.ok(pwaBanner.includes('hidden sm:block'), 'floating PWA install card suppressed on mobile in favour of top header pill');
+});
+
+test('Mobile Haptic Feedback Engine (navigator.vibrate & mute toggle safety)', () => {
+  // Headless environment safety: navigator.vibrate may be missing
+  assert.equal(isHapticsSupported(), false);
+  assert.doesNotThrow(() => {
+    assert.equal(haptics.tap(), false);
+    assert.equal(haptics.pulse(), false);
+    assert.equal(haptics.warning(), false);
+    assert.equal(haptics.celebrate(), false);
+    assert.equal(haptics.custom([10, 20, 10]), false);
+  });
+
+  // Mock navigator.vibrate to verify pattern dispatching
+  const recordedPatterns = [];
+  const hadVibrate = 'vibrate' in navigator;
+  const origVibrate = navigator.vibrate;
+  try {
+    Object.defineProperty(navigator, 'vibrate', {
+      value: (pattern) => {
+        recordedPatterns.push(pattern);
+        return true;
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    assert.equal(isHapticsSupported(), true);
+
+    // Unmuted: triggers vibration
+    localStorage.removeItem('word_chain_sound_muted');
+    assert.equal(isFeedbackMuted(), false);
+
+    assert.equal(haptics.tap(), true);
+    assert.equal(recordedPatterns.pop(), 10);
+
+    assert.equal(haptics.pulse(), true);
+    assert.equal(recordedPatterns.pop(), 20);
+
+    assert.equal(haptics.warning(), true);
+    assert.deepEqual(recordedPatterns.pop(), [25, 40, 25]);
+
+    assert.equal(haptics.celebrate(), true);
+    assert.deepEqual(recordedPatterns.pop(), [30, 50, 40]);
+
+    // Muted: respects mute toggle and does NOT vibrate
+    localStorage.setItem('word_chain_sound_muted', 'true');
+    assert.equal(isFeedbackMuted(), true);
+    assert.equal(haptics.tap(), false);
+    assert.equal(recordedPatterns.length, 0);
+
+    // Re-enable
+    localStorage.removeItem('word_chain_sound_muted');
+    assert.equal(isFeedbackMuted(), false);
+  } finally {
+    if (hadVibrate) {
+      Object.defineProperty(navigator, 'vibrate', { value: origVibrate, configurable: true, writable: true });
+    } else {
+      delete navigator.vibrate;
+    }
+  }
+});
+
+test('Player Avatar Medallions (12 curated medallions, deterministic fallback & persistence)', () => {
+  // Exactly 12 curated medallions
+  assert.equal(AVATAR_LIST.length, 12);
+  const expectedEmojis = ['⚡', '👑', '🔥', '🦊', '🚀', '🎯', '💎', '🦁', '👻', '🧠', '🎲', '🌟'];
+  for (const emoji of expectedEmojis) {
+    const found = AVATAR_LIST.find((a) => a.emoji === emoji);
+    assert.ok(found, `Avatar for ${emoji} must exist`);
+    assert.ok(found.ringGradient, `${emoji} must have a ringGradient`);
+    assert.ok(found.hex, `${emoji} must have a hex color`);
+  }
+
+  // Persistence in localStorage
+  saveAvatar('🦊');
+  assert.equal(getSavedAvatar(), '🦊');
+  saveAvatar('ghost');
+  assert.equal(getSavedAvatar(), '👻');
+  saveAvatar('⚡');
+  assert.equal(getSavedAvatar(), '⚡');
+
+  // Name formatting and extraction
+  const formatted = formatPlayerNameWithAvatar('Taylor', '🦊');
+  assert.equal(formatted, '🦊 Taylor');
+
+  const extracted = extractPlayerAvatar('🦊 Taylor');
+  assert.equal(extracted.cleanName, 'Taylor');
+  assert.equal(extracted.avatar.emoji, '🦊');
+
+  // Deterministic fallback by name hash for players without explicit avatar
+  const hash1 = hashString('Morgan');
+  const hash2 = hashString('Morgan');
+  assert.equal(hash1, hash2, 'Hash must be strictly deterministic');
+
+  const avatarMorgan1 = getAvatarForPlayer('Morgan');
+  const avatarMorgan2 = getAvatarForPlayer('Morgan');
+  assert.equal(avatarMorgan1.id, avatarMorgan2.id, 'Same player name gets the same consistent avatar medallion');
+
+  // Explicit avatar preference overrides fallback
+  const explicitAvatar = getAvatarForPlayer('Morgan', '👑');
+  assert.equal(explicitAvatar.emoji, '👑');
+});
+
+test('Score Count-Up Easing & Choreographed Transitions', () => {
+  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const css = fs.readFileSync(path.join(rootDir, 'src', 'index.css'), 'utf8');
+
+  // Easing curve verification
+  assert.equal(easeOutCubic(0), 0);
+  assert.equal(easeOutCubic(1), 1);
+  assert.equal(easeOutCubic(0.5), 0.875);
+  assert.ok(easeOutCubic(0.25) > 0.25, 'Ease out must accelerate faster initially and decelerate near finish');
+
+  // CSS slide-and-fade micro-transition
+  assert.ok(css.includes('@keyframes slideFadeIn'), 'slideFadeIn keyframes present');
+  assert.ok(css.includes('.animate-slide-fade'), 'animate-slide-fade utility class present');
+});
+
+test('HTML5 Canvas Scorecard Generator & Share Fallback', async () => {
+  // Headless environment safety checks: document.createElement is missing or returns null
+  assert.doesNotThrow(() => {
+    const canvas = generateScorecardCanvas({
+      gameTitle: 'Friendship Quiz',
+      playerName: 'Jordan',
+      avatarEmoji: '🦊',
+      scoreText: '9 / 10',
+      subtitle: 'Besties Forever',
+      roomCode: 'ABCD',
+    });
+    // In headless Node.js without DOM canvas, it returns null gracefully
+    assert.equal(canvas, null);
+  });
+
+  const blob = await generateScorecardBlob({
+    gameTitle: 'Trivia Battle',
+    playerName: 'Jordan',
+    scoreText: '1000 pts',
+  });
+  assert.equal(blob, null);
+
+  const dataUrl = generateScorecardDataUrl({
+    gameTitle: 'Word Chain',
+    playerName: 'Jordan',
+    scoreText: 'Champion',
+  });
+  assert.equal(dataUrl, null);
+
+  // shareOrDownloadScorecard resolves safely without throwing
+  const result = await shareOrDownloadScorecard({
+    gameTitle: 'Tic-Tac-Toe',
+    playerName: 'Jordan',
+    scoreText: 'Winner',
+  });
+  assert.ok(result);
+  assert.equal(typeof result.success, 'boolean');
+});
+
+test('WhatsApp Switch Auto-Resync & Glass Shimmer Component', () => {
+  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const gameContext = fs.readFileSync(path.join(rootDir, 'src', 'context', 'GameContext.tsx'), 'utf8');
+  const friendshipView = fs.readFileSync(path.join(rootDir, 'src', 'components', 'FriendshipQuizView.tsx'), 'utf8');
+  const skeletonFile = fs.readFileSync(path.join(rootDir, 'src', 'components', 'GlassSkeleton.tsx'), 'utf8');
+
+  // GameContext resyncs on visibilitychange, focus, and pageshow
+  assert.ok(gameContext.includes("document.addEventListener('visibilitychange', handleResume)"));
+  assert.ok(gameContext.includes("window.addEventListener('focus', handleResume)"));
+  assert.ok(gameContext.includes("window.addEventListener('pageshow', handleResume)"));
+
+  // FriendshipQuizView auto-resyncs leaderboard on resume
+  assert.ok(friendshipView.includes("document.addEventListener('visibilitychange', handleResync)"));
+  assert.ok(friendshipView.includes("window.addEventListener('focus', handleResync)"));
+  assert.ok(friendshipView.includes("window.addEventListener('pageshow', handleResync)"));
+
+  // GlassSkeleton component provides glass-card and pulse shimmer variants
+  assert.ok(skeletonFile.includes('GlassSkeleton'));
+  assert.ok(skeletonFile.includes('glass-card'));
+  assert.ok(skeletonFile.includes('animate-pulse'));
 });

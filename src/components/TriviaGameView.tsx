@@ -13,6 +13,9 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
+import { AvatarMedallion } from './AvatarMedallion';
+import { getAvatarForPlayer, extractPlayerAvatar } from '../lib/avatars';
+import { haptics } from '../lib/haptics';
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -62,24 +65,9 @@ export const TriviaGameView: React.FC = () => {
 
   const sortedByScore = [...activePlayers].sort((a, b) => (b.score || 0) - (a.score || 0));
 
-  const getAvatarColor = (name: string) => {
-    const colors = [
-      'from-blue-600 to-indigo-700',
-      'from-pink-600 to-rose-700',
-      'from-amber-500 to-orange-600',
-      'from-emerald-600 to-teal-700',
-      'from-cyan-600 to-blue-700',
-      'from-violet-600 to-fuchsia-700',
-    ];
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return colors[Math.abs(hash) % colors.length];
-  };
-
   const handleAnswer = async (answer: string) => {
     if (isRevealed || submittingAnswer !== null) return;
+    haptics.tap();
     setSubmittingAnswer(answer);
     await submitAnswer(answer);
     setSubmittingAnswer(null);
@@ -309,15 +297,9 @@ export const TriviaGameView: React.FC = () => {
                 >
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-slate-400 w-4 text-[10px]">#{idx + 1}</span>
-                    <div
-                      className={`w-6 h-6 rounded-lg bg-gradient-to-tr ${getAvatarColor(
-                        p.display_name
-                      )} flex items-center justify-center text-white text-[10px] font-bold`}
-                    >
-                      {p.display_name.charAt(0).toUpperCase()}
-                    </div>
+                    <AvatarMedallion avatar={getAvatarForPlayer(p.display_name)} size="xs" />
                     <span className="font-bold text-[#0b2545]">
-                      {p.display_name} {isMe ? '(You)' : ''}
+                      {extractPlayerAvatar(p.display_name).cleanName} {isMe ? '(You)' : ''}
                     </span>
                   </div>
 

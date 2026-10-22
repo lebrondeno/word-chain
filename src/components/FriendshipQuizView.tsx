@@ -44,8 +44,15 @@ import {
   Home,
   Check,
   RotateCcw,
+  Share2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { CountUp } from './CountUp';
+import { shareOrDownloadScorecard } from '../lib/scorecardGenerator';
+import { getAvatarForPlayer, extractPlayerAvatar, getSavedAvatar } from '../lib/avatars';
+import { AvatarMedallion } from './AvatarMedallion';
+import { GlassSkeleton } from './GlassSkeleton';
+import { haptics } from '../lib/haptics';
 
 interface FriendshipQuizViewProps {
   initialQuizCode?: string;
@@ -134,6 +141,39 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
   } | null>(null);
   const [finalScore, setFinalScore] = useState<{ score: number; total: number } | null>(null);
   const [playLeaderboard, setPlayLeaderboard] = useState<FriendshipSubmissionItem[]>([]);
+  const [isScorecardSharing, setIsScorecardSharing] = useState(false);
+  const [scorecardFeedback, setScorecardFeedback] = useState<string | null>(null);
+
+  // Auto-resync leaderboard on WhatsApp / app switch return
+  useEffect(() => {
+    const codeToResync = createdCode || activeQuiz?.code || initialQuizCode;
+    if (!codeToResync) return;
+    if (mode !== 'created_summary' && mode !== 'play_result') return;
+
+    const handleResync = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        try {
+          const board = await getFriendshipLeaderboard(codeToResync, activeQuiz?.id);
+          if (mode === 'created_summary') {
+            setCreatedLeaderboard(board);
+          } else {
+            setPlayLeaderboard(board);
+          }
+        } catch {
+          // Safe
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleResync);
+    window.addEventListener('focus', handleResync);
+    window.addEventListener('pageshow', handleResync);
+    return () => {
+      document.removeEventListener('visibilitychange', handleResync);
+      window.removeEventListener('focus', handleResync);
+      window.removeEventListener('pageshow', handleResync);
+    };
+  }, [createdCode, activeQuiz?.code, activeQuiz?.id, initialQuizCode, mode]);
 
   const isAnsweringRef = useRef(false);
 
@@ -273,6 +313,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
   };
 
   const handleSelectAnswerForCurrent = (optionIndex: number) => {
+    haptics.tap();
     setBuilderQuestions((prev) => {
       const next = [...prev];
       next[currentBuilderIndex] = {
@@ -430,6 +471,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
 
   const handlePickChallengerAnswer = async (optionIndex: number) => {
     if (!activeQuiz || isAnsweringRef.current || revealState !== null) return;
+    haptics.tap();
     isAnsweringRef.current = true;
 
     try {
@@ -438,6 +480,12 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
         playIndex,
         optionIndex
       );
+
+      if (checkRes.isCorrect) {
+        haptics.success();
+      } else {
+        haptics.warning();
+      }
 
       setRevealState({
         selectedIndex: optionIndex,
@@ -498,6 +546,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
           // Fetch updated leaderboard
           const board = await getFriendshipLeaderboard(activeQuiz.code, activeQuiz.id);
           setPlayLeaderboard(board);
+          haptics.celebrate();
           setMode('play_result');
 
           try {
@@ -982,7 +1031,9 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             </span>
           </div>
 
-          {createdLeaderboard.length === 0 ? (
+          {loading ? (
+            <GlassSkeleton lines={3} variant="row" />
+          ) : createdLeaderboard.length === 0 ? (
             <div className="text-center py-8 text-xs text-slate-400 bg-slate-50 border border-dashed border-slate-200 rounded-2xl">
               No responses yet. Share your quiz link to see friend scores here!
             </div>
@@ -995,13 +1046,16 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
                     key={item.id}
                     className="p-3 bg-white border border-slate-200 rounded-full flex items-center justify-between text-xs font-semibold shadow-xs"
                   >
-                    <div className="flex items-center gap-3">
-                      <span className="w-6 h-6 rounded-full bg-[#0b2545] text-white flex items-center justify-center font-bold text-[11px] shrink-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-5 h-5 rounded-full bg-[#0b2545] text-white flex items-center justify-center font-bold text-[10px] shrink-0">
                         {rankNum}
                       </span>
-                      <span className="text-slate-800 font-bold">{item.player_name}</span>
+                      <AvatarMedallion avatar={getAvatarForPlayer(item.player_name)} size="xs" />
+                      <span className="text-slate-800 font-bold break-words">
+                        {extractPlayerAvatar(item.player_name).cleanName}
+                      </span>
                     </div>
-                    <span className="text-[#1f9d55] font-black mr-2">
+                    <span className="text-[#1f9d55] font-black mr-2 shrink-0">
                       {item.score} / {item.total}
                     </span>
                   </div>
@@ -1010,11 +1064,54 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             </div>
           )}
 
-          <div className="pt-2 flex gap-2">
+          <div className="pt-2 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                haptics.tap();
+                setIsScorecardSharing(true);
+                setScorecardFeedback(null);
+                const res = await shareOrDownloadScorecard({
+                  gameTitle: 'Friendship Quiz',
+                  playerName: creatorName,
+                  avatarEmoji: getSavedAvatar(),
+                  scoreText: `${createdLeaderboard.length} Responses`,
+                  subtitle: `Who Knows ${creatorName} Best?`,
+                  roomCode: createdCode,
+                });
+                setIsScorecardSharing(false);
+                setScorecardFeedback(
+                  res.method === 'share'
+                    ? 'Leaderboard shared!'
+                    : res.method === 'download'
+                    ? 'Leaderboard card saved & link copied!'
+                    : 'Share text copied!'
+                );
+                setTimeout(() => setScorecardFeedback(null), 3000);
+              }}
+              disabled={isScorecardSharing}
+              className="w-full py-3 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-md active:scale-95 disabled:opacity-50"
+            >
+              {isScorecardSharing ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Share2 className="w-3.5 h-3.5 text-cyan-200" />
+                  <span>📸 Share Leaderboard Card</span>
+                </>
+              )}
+            </button>
+
+            {scorecardFeedback && (
+              <div className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl py-2 px-3 animate-fade-in text-center">
+                {scorecardFeedback}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={onExit}
-              className="flex-1 py-3 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-2"
             >
               <Home className="w-4 h-4" />
               <span>Return to Game Hub</span>
@@ -1317,8 +1414,8 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
 
             {/* Stacked Fraction (Score / Total) centered */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-3xl font-black text-[#0b2545] tracking-tight">
-                {score}
+              <span className="text-3xl font-black text-[#0b2545] tracking-tight font-heading">
+                <CountUp end={score} duration={700} />
               </span>
               <div className="w-8 h-[2px] bg-slate-300 my-0.5" />
               <span className="text-base font-bold text-slate-500">
@@ -1327,8 +1424,52 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             </div>
           </div>
 
-          {/* Viral CTA Button */}
-          <div className="pt-2">
+          {/* Action CTAs: Share Brag Card & Create Own Quiz */}
+          <div className="pt-2 space-y-2.5">
+            <button
+              type="button"
+              onClick={async () => {
+                haptics.tap();
+                setIsScorecardSharing(true);
+                setScorecardFeedback(null);
+                const res = await shareOrDownloadScorecard({
+                  gameTitle: 'Friendship Quiz',
+                  playerName: friendName,
+                  avatarEmoji: getSavedAvatar(),
+                  scoreText: `${score} / ${total}`,
+                  subtitle: `${percentage}% Match with ${activeQuiz.creator_name}`,
+                  roomCode: activeQuiz.code,
+                });
+                setIsScorecardSharing(false);
+                setScorecardFeedback(
+                  res.method === 'share'
+                    ? 'Brag card shared!'
+                    : res.method === 'download'
+                    ? 'Brag card saved & link copied!'
+                    : 'Share text copied!'
+                );
+                setTimeout(() => setScorecardFeedback(null), 3000);
+              }}
+              disabled={isScorecardSharing}
+              className="w-full py-3.5 px-6 rounded-full bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white font-black text-sm shadow-md shadow-indigo-600/25 transition flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+            >
+              {isScorecardSharing ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4 text-cyan-200" />
+                  <span>📸 Share Brag Card</span>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                </>
+              )}
+            </button>
+
+            {scorecardFeedback && (
+              <div className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl py-2 px-3 animate-fade-in text-center">
+                {scorecardFeedback}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => {
@@ -1343,9 +1484,9 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
                   window.history.replaceState(window.history.state, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
                 }
               }}
-              className="w-full py-4 px-6 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-black text-sm shadow-lg shadow-emerald-700/25 transition flex items-center justify-center gap-2 active:scale-[0.98]"
+              className="w-full py-3 px-6 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-black text-sm shadow-sm transition flex items-center justify-center gap-2 active:scale-[0.98]"
             >
-              <Sparkles className="w-5 h-5 text-amber-300" />
+              <Sparkles className="w-4 h-4 text-amber-300" />
               <span>Create Your Own Quiz</span>
             </button>
           </div>
@@ -1365,8 +1506,11 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             </span>
           </div>
 
-          <div className="space-y-2">
-            {playLeaderboard.map((item, idx) => {
+          {loading ? (
+            <GlassSkeleton lines={3} variant="row" />
+          ) : (
+            <div className="space-y-2">
+              {playLeaderboard.map((item, idx) => {
               const rankNum = item.rank || idx + 1;
               const isMe = item.player_name.toLowerCase() === friendName.toLowerCase();
 
@@ -1379,21 +1523,23 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
                       : 'bg-white border border-slate-200'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="w-6 h-6 rounded-full bg-[#0b2545] text-white flex items-center justify-center font-bold text-[11px] shrink-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-5 h-5 rounded-full bg-[#0b2545] text-white flex items-center justify-center font-bold text-[10px] shrink-0">
                       {rankNum}
                     </span>
-                    <span className="text-slate-800 font-bold">
-                      {item.player_name} {isMe && '(You)'}
+                    <AvatarMedallion avatar={getAvatarForPlayer(item.player_name)} size="xs" showGlow={isMe} />
+                    <span className="text-slate-800 font-bold break-words">
+                      {extractPlayerAvatar(item.player_name).cleanName} {isMe && '(You)'}
                     </span>
                   </div>
-                  <span className="text-[#1f9d55] font-black mr-2">
+                  <span className="text-[#1f9d55] font-black mr-2 shrink-0">
                     {item.score} / {item.total}
                   </span>
                 </div>
               );
             })}
           </div>
+          )}
 
           <div className="pt-2">
             <button

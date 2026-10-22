@@ -10,6 +10,9 @@ import {
   HelpCircle,
   RotateCcw,
 } from 'lucide-react';
+import { AvatarMedallion } from './AvatarMedallion';
+import { getAvatarForPlayer, extractPlayerAvatar } from '../lib/avatars';
+import { haptics } from '../lib/haptics';
 
 export const VoteRevealGameView: React.FC = () => {
   const {
@@ -82,6 +85,7 @@ export const VoteRevealGameView: React.FC = () => {
 
   const handleVote = async (choiceKey: 'A' | 'B') => {
     if (isRevealed || submittingVote) return;
+    haptics.tap();
     setSubmittingVote(choiceKey);
     await submitVote(choiceKey);
     setSubmittingVote(null);
@@ -488,15 +492,12 @@ export const VoteRevealGameView: React.FC = () => {
                 }`}
               >
                 <div className="flex items-center gap-2 overflow-hidden">
-                  <div
-                    className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 text-white bg-gradient-to-tr ${getAvatarColor(
-                      player.display_name
-                    )}`}
-                  >
-                    {player.display_name.charAt(0).toUpperCase()}
-                  </div>
+                  <AvatarMedallion
+                    avatar={getAvatarForPlayer(player.display_name)}
+                    size="xs"
+                  />
                   <div className="break-words font-medium">
-                    {player.display_name} {isMe ? '(You)' : ''}
+                    {extractPlayerAvatar(player.display_name).cleanName} {isMe ? '(You)' : ''}
                   </div>
                 </div>
 

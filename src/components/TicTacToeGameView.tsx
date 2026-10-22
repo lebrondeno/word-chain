@@ -3,6 +3,7 @@ import { useGame } from '../context/GameContext';
 import { Clock, Eye, Bot, User, RotateCcw, ArrowLeft, Trophy, Sparkles, Zap } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { soundManager } from '../lib/audio';
+import { haptics } from '../lib/haptics';
 import {
   DEFAULT_MOVE_RULE,
   DEFAULT_TIC_TAC_TOE_VARIANT,
@@ -108,6 +109,7 @@ export const TicTacToeGameView: React.FC<TicTacToeGameViewProps> = ({
   // Trigger celebration on local win
   useEffect(() => {
     if (localResult.winner) {
+      haptics.celebrate();
       soundManager.playWinner();
       confetti({
         particleCount: 50,
@@ -119,6 +121,7 @@ export const TicTacToeGameView: React.FC<TicTacToeGameViewProps> = ({
         [localResult.winner === 'X' ? 'x' : 'o']: prev[localResult.winner === 'X' ? 'x' : 'o'] + 1,
       }));
     } else if (localResult.isDraw) {
+      haptics.pulse();
       soundManager.playCorrect();
       setLocalScores((prev) => ({ ...prev, draws: prev.draws + 1 }));
     }
@@ -181,6 +184,7 @@ export const TicTacToeGameView: React.FC<TicTacToeGameViewProps> = ({
 
     if (localVariant === 'classic') {
       if (localBoard[index] !== null) return;
+      haptics.tap();
       soundManager.playVote();
       const nextBoard = [...localBoard];
       nextBoard[index] = localTurn;
@@ -193,6 +197,7 @@ export const TicTacToeGameView: React.FC<TicTacToeGameViewProps> = ({
     // Tactical: tap own piece to select, then tap a legal open square
     const cell = localBoard[index];
     if (cell === localTurn) {
+      haptics.tap();
       soundManager.playTick(false);
       setSelectedCell((prev) => (prev === index ? null : index));
       return;
@@ -202,6 +207,7 @@ export const TicTacToeGameView: React.FC<TicTacToeGameViewProps> = ({
       cell === null &&
       isLegalPieceMove(localBoard, localTurn, { from: selectedCell, to: index }, moveRule)
     ) {
+      haptics.tap();
       soundManager.playVote();
       setLocalBoard(applyPieceMove(localBoard, { from: selectedCell, to: index }));
       setSelectedCell(null);
@@ -232,10 +238,12 @@ export const TicTacToeGameView: React.FC<TicTacToeGameViewProps> = ({
 
     if (mpTactical) {
       if (board[index] === localMark) {
+        haptics.tap();
         setSelectedCell((prev) => (prev === index ? null : index));
         return;
       }
       if (selectedCell !== null && board[index] == null) {
+        haptics.tap();
         setSubmittingCell(index);
         const res = await submitPieceMove(selectedCell, index);
         setSubmittingCell(null);
@@ -245,6 +253,7 @@ export const TicTacToeGameView: React.FC<TicTacToeGameViewProps> = ({
     }
 
     if (board[index] != null) return;
+    haptics.tap();
     setSubmittingCell(index);
     await submitMove(index);
     setSubmittingCell(null);

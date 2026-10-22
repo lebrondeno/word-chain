@@ -22,6 +22,11 @@
     <meta name="twitter:description" content="Play instant party games with friends! Real-time elimination and friendship quizzes." />
     <meta name="twitter:image" content="https://word-chain-one.vercel.app/og-preview.png" />
 
+    <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet" />
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -30,8 +35,14 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="PartyHub" />
   </head>
-  <body class="bg-[#eef4fa] text-slate-900 min-h-screen selection:bg-[#3b4cca] selection:text-white">
-    <div id="root"></div>
+  <body class="bg-[#0b1120] text-slate-900 min-h-screen selection:bg-[#3b4cca] selection:text-white font-sans antialiased overflow-x-hidden">
+    <!-- Ambient Radial Mesh Lighting Bloom (deep indigo top-left, emerald/cyan bottom-right, pointer-events-none) -->
+    <div id="ambient-mesh-glow" class="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
+      <div class="absolute -top-[20%] -left-[10%] w-[70vw] max-w-[700px] h-[70vw] max-h-[700px] rounded-full bg-indigo-600/20 blur-[120px]"></div>
+      <div class="absolute -bottom-[20%] -right-[10%] w-[65vw] max-w-[650px] h-[65vw] max-h-[650px] rounded-full bg-emerald-500/15 blur-[130px]"></div>
+      <div class="absolute top-[40%] right-[10%] w-[45vw] max-w-[500px] h-[45vw] max-h-[500px] rounded-full bg-cyan-500/10 blur-[110px]"></div>
+    </div>
+    <div id="root" class="relative z-10"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

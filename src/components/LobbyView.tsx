@@ -21,6 +21,8 @@ import { TicTacToeGameView } from './TicTacToeGameView';
 import { useHistoryLayer } from '../hooks/useHistoryLayer';
 import { DEFAULT_TIC_TAC_TOE_VARIANT, type TicTacToeVariant } from '../lib/ticTacToe';
 import { canStartLobby, getMinPlayersToStart } from '../lib/lobbyRules';
+import { getAvatarForPlayer, extractPlayerAvatar } from '../lib/avatars';
+import { AvatarMedallion } from './AvatarMedallion';
 
 export const LobbyView: React.FC = () => {
   const { session, players, localPlayer, startGame, setGameSettings, setTicTacToeVariant, leaveGame, error } =
@@ -145,22 +147,6 @@ export const LobbyView: React.FC = () => {
   const handleVariantChange = async (variant: TicTacToeVariant) => {
     if (!isHost || variant === tttVariant) return;
     await setTicTacToeVariant(variant);
-  };
-
-  const getAvatarColor = (name: string) => {
-    const colors = [
-      'from-blue-600 to-indigo-700',
-      'from-emerald-600 to-teal-700',
-      'from-amber-500 to-orange-600',
-      'from-rose-500 to-pink-600',
-      'from-purple-600 to-violet-700',
-      'from-cyan-600 to-blue-700',
-    ];
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return colors[Math.abs(hash) % colors.length];
   };
 
   const startLabel = soloTicTacToe
@@ -445,15 +431,13 @@ export const LobbyView: React.FC = () => {
                     : 'bg-white/70 border-white'
                 }`}
               >
-                <span
-                  className={`w-6 h-6 rounded-full bg-gradient-to-tr ${getAvatarColor(
-                    player.display_name
-                  )} flex items-center justify-center text-white text-[11px] font-bold shrink-0`}
-                >
-                  {player.display_name.charAt(0).toUpperCase()}
-                </span>
+                <AvatarMedallion
+                  avatar={getAvatarForPlayer(player.display_name)}
+                  size="xs"
+                  showGlow={isMe}
+                />
                 <span className="text-xs font-bold text-[#0b2545] break-words leading-tight">
-                  {player.display_name}
+                  {extractPlayerAvatar(player.display_name).cleanName}
                   {isMe ? ' (You)' : ''}
                 </span>
                 {isPlayerHost && <Crown className="w-3 h-3 text-amber-500 fill-current shrink-0" />}
