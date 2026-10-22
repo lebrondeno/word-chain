@@ -23,6 +23,11 @@ import {
 import {
   saveCreatedQuizToHistory,
   savePlayedQuizToHistory,
+  markQuizCreatedByMe,
+  isQuizCreator,
+  saveQuizCompletion,
+  getQuizCompletion,
+  resolveSharedQuizEntry,
   getQuizDraft,
   saveQuizDraft,
   clearQuizDraft,
@@ -163,13 +168,22 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
         setCreatedCode(res.quiz.code);
         setCreatorName(res.quiz.creator_name);
 
-        const board = await getFriendshipLeaderboard(res.quiz.code, res.quiz.id);
-        if (isCurrent) {
+        // Decide what this device may see. Guests who have not completed the
+        // quiz never get the leaderboard (even via ?view=results).
+        const entry = resolveSharedQuizEntry(res.quiz.code, initialView);
+        const completion = getQuizCompletion(res.quiz.code);
+
+        if (entry !== 'welcome' || isQuizCreator(res.quiz.code)) {
+          const board = await getFriendshipLeaderboard(res.quiz.code, res.quiz.id);
+          if (!isCurrent) return;
           setPlayLeaderboard(board);
           setCreatedLeaderboard(board);
+        } else {
+          setPlayLeaderboard([]);
+          setCreatedLeaderboard([]);
         }
 
-        if (initialView === 'results') {
+        if (entry === 'creator_summary') {
           setMode('created_summary');
           if (typeof window !== 'undefined') {
             const params = new URLSearchParams(window.location.search);
@@ -177,8 +191,19 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             params.set('view', 'results');
             window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}`);
           }
+        } else if (entry === 'guest_result' && completion) {
+          setFriendName(completion.playerName);
+          setFinalScore({ score: completion.score, total: completion.total });
+          setMode('play_result');
         } else {
           setMode('play_join');
+          // Strip a stale ?view=results so a refresh can't skip the quiz either
+          if (typeof window !== 'undefined' && initialView === 'results') {
+            const params = new URLSearchParams(window.location.search);
+            params.delete('view');
+            const qs = params.toString();
+            window.history.replaceState(window.history.state, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+          }
         }
       } else {
         setError(res.error || 'Could not load quiz.');
@@ -353,6 +378,8 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
       clearQuizDraft();
 
       // Save to persistent user quiz history
+      // Persist creator ownership of this quiz on this device (creator token)
+      markQuizCreatedByMe(res.code);
       saveCreatedQuizToHistory({
         code: res.code,
         creatorName: creatorName.trim(),
@@ -440,6 +467,15 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
           setFinalScore({
             score: submitRes.score,
             total: submitRes.total,
+          });
+
+          // Unlock + persist this guest's finished submission for this quiz
+          saveQuizCompletion({
+            code: activeQuiz.code,
+            playerName: friendName.trim(),
+            score: submitRes.score,
+            total: submitRes.total,
+            answers: nextAnswers,
           });
 
           // Save to persistent user quiz history
@@ -694,7 +730,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
 
           {/* Question Heading: Large clean centered text */}
           <div className="text-center px-2">
-            <h2 className="text-lg sm:text-2xl font-black text-[#0b2545] leading-snug max-w-md mx-auto">
+            <h2 className="text-xl sm:text-2xl font-black text-[#0b2545] leading-snug max-w-md mx-auto break-words">
               {currentQ.prompt}
             </h2>
             <p className="text-[11px] text-slate-400 mt-1">
@@ -882,6 +918,33 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
   // ----------------------------------------------------
   // RENDER: CREATOR COMPLETED SUMMARY & LIVE LEADERBOARD
   // ----------------------------------------------------
+  if (mode === 'created_summary' && createdCode && !isQuizCreator(createdCode)) {
+    // Defensive: a non-creator can never reach the creator summary / leaderboard
+    return (
+      <div className="w-full max-w-lg mx-auto px-4 py-10 text-center space-y-4 text-slate-800">
+        <div className="glass-card rounded-3xl p-6 space-y-3">
+          <h2 className="text-lg font-black text-[#0b2545]">🔒 Finish the quiz to unlock the leaderboard</h2>
+          <p className="text-xs text-slate-600">Answer every question to see your score and the live leaderboard.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setMode('play_join');
+              if (typeof window !== 'undefined') {
+                const params = new URLSearchParams(window.location.search);
+                params.delete('view');
+                const qs = params.toString();
+                window.history.replaceState(window.history.state, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+              }
+            }}
+            className="w-full py-3 rounded-full bg-[#1f9d55] text-white font-bold text-sm"
+          >
+            Take the quiz
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (mode === 'created_summary') {
     return (
       <div className="w-full max-w-lg mx-auto px-4 py-6 space-y-6 animate-fade-in text-slate-800">
@@ -967,18 +1030,18 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
   // ----------------------------------------------------
   if (mode === 'play_join' && activeQuiz) {
     return (
-      <div className="w-full max-w-lg mx-auto px-4 py-6 space-y-6 animate-fade-in text-slate-800">
+      <div className="w-full max-w-lg mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6 animate-fade-in text-slate-800">
         <div className="glass-card rounded-3xl p-6 shadow-sm border border-slate-200 text-center space-y-3">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#3b4cca] to-[#1f9d55] text-white flex items-center justify-center mx-auto shadow-md text-2xl font-black">
             🤝
           </div>
-          <span className="text-xs uppercase font-bold tracking-widest text-[#3b4cca] block">
+          <span className="text-xs sm:text-sm uppercase font-bold tracking-widest text-[#3b4cca] block">
             Friendship Challenge
           </span>
-          <h2 className="text-2xl sm:text-3xl font-black text-[#0b2545]">
+          <h2 className="text-2xl sm:text-3xl font-black text-[#0b2545] leading-tight break-words">
             How well do you know {activeQuiz.creator_name}?
           </h2>
-          <p className="text-xs sm:text-sm text-slate-600 max-w-sm mx-auto">
+          <p className="text-sm sm:text-base text-slate-600 max-w-sm mx-auto leading-relaxed">
             Answer {activeQuiz.total_questions} questions to find out your friendship score and see your rank on the leaderboard!
           </p>
         </div>
@@ -1000,20 +1063,21 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
               maxLength={25}
               value={friendName}
               onChange={(e) => setFriendName(e.target.value)}
-              className="w-full px-4 py-3 bg-[#f8fafc] border border-slate-300 rounded-2xl text-slate-900 font-semibold focus:outline-none focus:border-[#3b4cca] focus:ring-2 focus:ring-blue-100 transition text-sm"
+              className="w-full px-4 py-3 bg-[#f8fafc] border border-slate-300 rounded-2xl text-slate-900 font-semibold focus:outline-none focus:border-[#3b4cca] focus:ring-2 focus:ring-blue-100 transition text-base"
             />
           </div>
 
           <button
             type="button"
             onClick={handleStartChallenger}
-            className="w-full py-3.5 px-6 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-bold text-sm shadow-md shadow-emerald-700/20 transition flex items-center justify-center gap-2 active:scale-[0.98]"
+            className="w-full py-3.5 px-6 rounded-full bg-[#1f9d55] hover:bg-[#178044] text-white font-bold text-base shadow-md shadow-emerald-700/20 transition flex items-center justify-center gap-2 active:scale-[0.98]"
           >
             <span>Start Answering</span>
             <ArrowRight className="w-4 h-4" />
           </button>
 
-          {/* Quick Jump for Creator to View Leaderboard directly without taking quiz */}
+          {/* Creator-only shortcut: never rendered for guests opening a shared link */}
+          {isQuizCreator(activeQuiz.code) && (
           <div className="pt-2 text-center border-t border-slate-100">
             <button
               type="button"
@@ -1032,13 +1096,14 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
               className="w-full py-2.5 px-4 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-2 border border-slate-200"
             >
               <Trophy className="w-4 h-4 text-amber-500" />
-              <span>Are you {activeQuiz.creator_name}? View Live Leaderboard &amp; Results</span>
+              <span>👑 This is your quiz — View Live Leaderboard &amp; Results</span>
             </button>
           </div>
+          )}
         </div>
 
-        {/* Existing Leaderboard Preview */}
-        {playLeaderboard.length > 0 && (
+        {/* Existing Leaderboard Preview (creator only - guests unlock it after finishing) */}
+        {playLeaderboard.length > 0 && isQuizCreator(activeQuiz.code) && (
           <div className="glass-card rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
             <h3 className="font-bold text-sm text-[#0b2545] flex items-center gap-2">
               <Trophy className="w-4 h-4 text-amber-500" />
@@ -1074,7 +1139,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
     if (!currentQ) return null;
 
     return (
-      <div className="w-full max-w-xl mx-auto px-4 py-5 space-y-4 animate-fade-in text-slate-800">
+      <div className="w-full max-w-xl mx-auto px-3 sm:px-4 py-4 sm:py-5 space-y-3 sm:space-y-4 animate-fade-in text-slate-800">
         {/* Progress Header Card */}
         <div className="glass-card rounded-3xl p-4 shadow-sm border border-slate-200 space-y-3">
           <div className="flex items-center justify-between text-xs">
@@ -1115,7 +1180,7 @@ export const FriendshipQuizView: React.FC<FriendshipQuizViewProps> = ({
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
               Guess {activeQuiz.creator_name}&apos;s choice
             </span>
-            <h2 className="text-lg sm:text-2xl font-black text-[#0b2545] leading-snug max-w-md mx-auto">
+            <h2 className="text-xl sm:text-2xl font-black text-[#0b2545] leading-snug max-w-md mx-auto break-words">
               {currentQ.prompt}
             </h2>
           </div>

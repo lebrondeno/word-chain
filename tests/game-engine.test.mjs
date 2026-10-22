@@ -89,6 +89,15 @@ const {
   getQuizDraft,
   saveQuizDraft,
   clearQuizDraft,
+  markQuizCreatedByMe,
+  isQuizCreator,
+  saveQuizCompletion,
+  getQuizCompletion,
+  hasCompletedQuiz,
+  getQuizAccessLevel,
+  canBypassToCreatorLeaderboard,
+  canViewQuizLeaderboard,
+  resolveSharedQuizEntry,
 } = await jiti.import('../src/lib/savedQuizzes.ts');
 
 const {
@@ -1130,4 +1139,116 @@ test('Native App Layout, Glass UI and Lobby Source Integrity', () => {
     const src = read('src', 'components', `${file}.tsx`);
     assert.equal(/\btruncate\b|line-clamp/.test(src), false, `${file} must not truncate text`);
   }
+});
+
+test('Friendship Test - Creator ownership persists; guests get NO creator bypass before finishing', () => {
+  const code = 'OWN01X';
+
+  // A friend opening a shared link on a fresh device: not the creator
+  assert.equal(isQuizCreator(code), false);
+  assert.equal(getQuizAccessLevel(code), 'guest');
+  assert.equal(canBypassToCreatorLeaderboard(code), false);
+  assert.equal(canViewQuizLeaderboard(code), false, 'leaderboard locked for guests before completing');
+  assert.equal(resolveSharedQuizEntry(code, 'play'), 'welcome');
+  assert.equal(
+    resolveSharedQuizEntry(code, 'results'),
+    'welcome',
+    '?view=results must NOT let a guest skip the quiz'
+  );
+
+  // Creator finishes building the quiz on THIS device -> ownership persisted
+  const rec = markQuizCreatedByMe(code.toLowerCase());
+  assert.ok(rec && rec.token.length >= 16 && rec.code === code);
+  assert.equal(markQuizCreatedByMe(code).token, rec.token, 'token is stable across calls');
+
+  assert.equal(isQuizCreator(code), true);
+  assert.equal(isQuizCreator(` ${code.toLowerCase()} `), true, 'code matching is case/space insensitive');
+  assert.equal(getQuizAccessLevel(code), 'creator');
+  assert.equal(canBypassToCreatorLeaderboard(code), true);
+  assert.equal(canViewQuizLeaderboard(code), true);
+  assert.equal(resolveSharedQuizEntry(code, 'play'), 'welcome', 'creator still sees welcome card (with 👑 shortcut)');
+  assert.equal(resolveSharedQuizEntry(code, 'results'), 'creator_summary');
+
+  // Ownership is per quiz, not global
+  assert.equal(isQuizCreator('OTHER9'), false);
+  assert.equal(canBypassToCreatorLeaderboard('OTHER9'), false);
+  assert.equal(isQuizCreator(''), false);
+
+  // Legacy history entries flagged isCreator are honoured too
+  saveCreatedQuizToHistory({ code: 'LEGACY1', creatorName: 'Sam', totalQuestions: 10 });
+  assert.equal(isQuizCreator('LEGACY1'), true);
+
+  // Merely PLAYING someone else's quiz never grants creator access
+  savePlayedQuizToHistory({ code: 'PLAYED1', creatorName: 'Kim', totalQuestions: 10, score: 7 });
+  assert.equal(isQuizCreator('PLAYED1'), false);
+  assert.equal(canBypassToCreatorLeaderboard('PLAYED1'), false);
+  removeQuizFromHistory('LEGACY1');
+  removeQuizFromHistory('PLAYED1');
+});
+
+test('Friendship Test - Guest unlocks score + leaderboard only after completing; persists across reopen', () => {
+  const code = 'GST02Y';
+  assert.equal(hasCompletedQuiz(code), false);
+  assert.equal(getQuizCompletion(code), null);
+  assert.equal(canViewQuizLeaderboard(code), false);
+  assert.equal(resolveSharedQuizEntry(code, 'results'), 'welcome');
+
+  // Guest answers every question and submits
+  saveQuizCompletion({ code: code.toLowerCase(), playerName: '  Mia ', score: 8, total: 10, answers: [0, 1, 2, 3, 0, 1, 2, 3, 0, 1] });
+
+  assert.equal(hasCompletedQuiz(code), true);
+  const saved = getQuizCompletion(code);
+  assert.equal(saved.playerName, 'Mia');
+  assert.equal(saved.score, 8);
+  assert.equal(saved.total, 10);
+  assert.equal(saved.answers.length, 10);
+
+  // Now unlocked (but still NOT the creator bypass)
+  assert.equal(getQuizAccessLevel(code), 'completed');
+  assert.equal(canViewQuizLeaderboard(code), true);
+  assert.equal(canBypassToCreatorLeaderboard(code), false);
+  assert.equal(isQuizCreator(code), false);
+
+  // Reopening the same link (play or results view) shows their score screen, never the creator summary
+  assert.equal(resolveSharedQuizEntry(code, 'play'), 'guest_result');
+  assert.equal(resolveSharedQuizEntry(code, 'results'), 'guest_result');
+
+  // A worse retry under the same name does not overwrite the best score
+  saveQuizCompletion({ code, playerName: 'Mia', score: 3, total: 10, answers: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] });
+  assert.equal(getQuizCompletion(code).score, 8);
+  saveQuizCompletion({ code, playerName: 'Mia', score: 10, total: 10, answers: [3, 3, 3, 3, 3, 3, 3, 3, 3, 3] });
+  assert.equal(getQuizCompletion(code).score, 10);
+
+  // Completing quiz A never unlocks quiz B
+  assert.equal(hasCompletedQuiz('OTHER02'), false);
+  assert.equal(canViewQuizLeaderboard('OTHER02'), false);
+});
+
+test('Friendship Test - Shared link UI wiring & responsive viewport', () => {
+  const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const view = fs.readFileSync(path.join(rootDir, 'src', 'components', 'FriendshipQuizView.tsx'), 'utf8');
+  const html = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+
+  // The old "Are you X?" shortcut must be gone; the 👑 creator shortcut must be gated on ownership
+  assert.equal(view.includes('Are you {activeQuiz.creator_name}?'), false);
+  const crownIdx = view.indexOf('This is your quiz');
+  assert.ok(crownIdx > 0, 'creator shortcut label present');
+  assert.ok(
+    view.lastIndexOf('isQuizCreator(activeQuiz.code)', crownIdx) > view.lastIndexOf('mode === \'play_join\'', crownIdx),
+    'creator shortcut must be wrapped in an isQuizCreator check'
+  );
+
+  // Ownership persisted on quiz creation; completion persisted on submit; loader gates by access
+  assert.ok(view.includes('markQuizCreatedByMe(res.code)'));
+  assert.ok(view.includes('saveQuizCompletion({'));
+  assert.ok(view.includes('resolveSharedQuizEntry('));
+  assert.ok(view.includes("mode === 'created_summary' && createdCode && !isQuizCreator(createdCode)"));
+
+  // Mobile viewport allows pinch-zoom up to 5x and does not lock scaling
+  const viewport = html.match(/<meta name="viewport" content="([^"]+)"/);
+  assert.ok(viewport, 'viewport meta present');
+  assert.ok(viewport[1].includes('width=device-width'));
+  assert.ok(viewport[1].includes('initial-scale=1.0'));
+  assert.ok(viewport[1].includes('maximum-scale=5.0'));
+  assert.equal(viewport[1].includes('user-scalable=no'), false);
 });

@@ -202,3 +202,158 @@ export function clearQuizDraft(): void {
     console.warn('Failed to clear quiz draft:', err);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Ownership & completion (guest flow gating)
+//
+// - "Created quizzes": codes this browser created, each with a random creator
+//   token. Only these devices may open the creator leaderboard shortcut.
+// - "Completed quizzes": quizzes this browser finished as a guest (name, score,
+//   answers). Only after completion is the score breakdown / live leaderboard
+//   unlocked for non-creators - also on later visits to the same link.
+// ---------------------------------------------------------------------------
+
+const STORAGE_CREATED_QUIZZES = 'partyhub_created_quizzes';
+const STORAGE_COMPLETED_QUIZZES = 'partyhub_completed_quizzes';
+
+export interface CreatedQuizRecord {
+  code: string;
+  token: string;
+  createdAt: string;
+}
+
+export interface QuizCompletionRecord {
+  code: string;
+  playerName: string;
+  score: number;
+  total: number;
+  answers: number[];
+  completedAt: string;
+}
+
+/** 'creator' = made this quiz on this device; 'completed' = guest who finished it; 'guest' = neither. */
+export type QuizAccessLevel = 'creator' | 'completed' | 'guest';
+
+const cleanQuizCode = (code: string) => (code || '').trim().toUpperCase();
+
+function readRecordMap<T>(key: string): Record<string, T> {
+  try {
+    const raw = getStorage('local').getItem(key);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, T>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRecordMap<T>(key: string, map: Record<string, T>): void {
+  try {
+    getStorage('local').setItem(key, JSON.stringify(map));
+  } catch (err) {
+    console.warn(`Error writing ${key}:`, err);
+  }
+}
+
+function generateCreatorToken(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c && typeof c.getRandomValues === 'function') {
+    const bytes = new Uint8Array(12);
+    c.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/** Persists creator ownership of `code` on this device. Idempotent - keeps the original token. */
+export function markQuizCreatedByMe(code: string): CreatedQuizRecord | null {
+  const clean = cleanQuizCode(code);
+  if (!clean) return null;
+  const map = readRecordMap<CreatedQuizRecord>(STORAGE_CREATED_QUIZZES);
+  if (!map[clean]) {
+    map[clean] = { code: clean, token: generateCreatorToken(), createdAt: new Date().toISOString() };
+    writeRecordMap(STORAGE_CREATED_QUIZZES, map);
+  }
+  return map[clean];
+}
+
+/**
+ * True only on the device/browser that created this quiz. Also honours quizzes
+ * recorded as created in the older partyhub_my_quizzes history.
+ */
+export function isQuizCreator(code: string): boolean {
+  const clean = cleanQuizCode(code);
+  if (!clean) return false;
+  if (readRecordMap<CreatedQuizRecord>(STORAGE_CREATED_QUIZZES)[clean]?.token) return true;
+  return getMySavedQuizzes().some((q) => cleanQuizCode(q.code) === clean && q.isCreator === true);
+}
+
+/** Saves a guest's finished quiz so reopening the link shows their score + leaderboard. */
+export function saveQuizCompletion(input: {
+  code: string;
+  playerName: string;
+  score: number;
+  total: number;
+  answers: number[];
+}): void {
+  const clean = cleanQuizCode(input.code);
+  if (!clean) return;
+  const map = readRecordMap<QuizCompletionRecord>(STORAGE_COMPLETED_QUIZZES);
+  const existing = map[clean];
+  // Keep the best attempt, mirroring the server-side "highest score per name" rule
+  if (existing && existing.playerName === input.playerName.trim() && existing.score > input.score) return;
+  map[clean] = {
+    code: clean,
+    playerName: input.playerName.trim(),
+    score: input.score,
+    total: input.total,
+    answers: [...input.answers],
+    completedAt: new Date().toISOString(),
+  };
+  writeRecordMap(STORAGE_COMPLETED_QUIZZES, map);
+}
+
+export function getQuizCompletion(code: string): QuizCompletionRecord | null {
+  const clean = cleanQuizCode(code);
+  if (!clean) return null;
+  const rec = readRecordMap<QuizCompletionRecord>(STORAGE_COMPLETED_QUIZZES)[clean];
+  return rec && typeof rec.score === 'number' && typeof rec.total === 'number' ? rec : null;
+}
+
+export function hasCompletedQuiz(code: string): boolean {
+  return getQuizCompletion(code) !== null;
+}
+
+export function getQuizAccessLevel(code: string): QuizAccessLevel {
+  if (isQuizCreator(code)) return 'creator';
+  if (hasCompletedQuiz(code)) return 'completed';
+  return 'guest';
+}
+
+/** Only the creator may bypass the quiz; guests need a completed submission. */
+export function canBypassToCreatorLeaderboard(code: string): boolean {
+  return getQuizAccessLevel(code) === 'creator';
+}
+
+/** Live leaderboard is unlocked for the creator, or for a guest after finishing every question. */
+export function canViewQuizLeaderboard(code: string): boolean {
+  return getQuizAccessLevel(code) !== 'guest';
+}
+
+/** What a shared quiz link should open for the current device. */
+export type SharedQuizEntryScreen = 'creator_summary' | 'guest_result' | 'welcome';
+
+export function resolveSharedQuizEntry(
+  code: string,
+  requestedView: 'play' | 'results' | 'create' = 'play'
+): SharedQuizEntryScreen {
+  const level = getQuizAccessLevel(code);
+  if (requestedView === 'results') {
+    if (level === 'creator') return 'creator_summary';
+    if (level === 'completed') return 'guest_result';
+    return 'welcome'; // guests can never skip the quiz via ?view=results
+  }
+  if (level === 'creator') return 'welcome'; // creator sees the welcome card + 👑 shortcut
+  if (level === 'completed') return 'guest_result';
+  return 'welcome';
+}
